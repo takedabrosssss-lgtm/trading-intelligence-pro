@@ -1,349 +1,275 @@
 
-import math
-from typing import Optional
+from math import isfinite
 
 
-def ema(values: list[float], period: int) -> list[Optional[float]]:
-    if period <= 0:
-        raise ValueError("Period must be positive")
+def _number(value, default=0.0):
+    try:
+        result = float(value)
+        return result if isfinite(result) else default
+    except (TypeError, ValueError):
+        return default
 
-    result = [None] * len(values)
 
+def ema(values, period):
     if len(values) < period:
-        return result
-
-    current = sum(values[:period]) / period
-    result[period - 1] = current
+        return []
 
     multiplier = 2 / (period + 1)
+    result = [sum(values[:period]) / period]
 
-    for i in range(period, len(values)):
-        current = (
-            values[i] * multiplier
-            + current * (1 - multiplier)
+    for value in values[period:]:
+        result.append(
+            value * multiplier
+            + result[-1] * (1 - multiplier)
         )
-        result[i] = current
 
     return result
 
 
-def sma(values: list[float], period: int) -> list[Optional[float]]:
-    result = [None] * len(values)
+def sma(values, period):
+    if len(values) < period:
+        return None
 
-    if period <= 0:
-        raise ValueError("Period must be positive")
-
-    for i in range(period - 1, len(values)):
-        result[i] = sum(
-            values[i - period + 1:i + 1]
-        ) / period
-
-    return result
+    return sum(values[-period:]) / period
 
 
-def rsi(values: list[float], period: int = 14) -> list[Optional[float]]:
-    result = [None] * len(values)
-
-    if period <= 0 or len(values) <= period:
-        return result
+def calculate_rsi(closes, period=14):
+    if len(closes) <= period:
+        return None
 
     gains = []
     losses = []
 
-    for i in range(1, len(values)):
-        change = values[i] - values[i - 1]
+    for index in range(1, len(closes)):
+        change = closes[index] - closes[index - 1]
         gains.append(max(change, 0))
         losses.append(max(-change, 0))
 
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
+    average_gain = sum(gains[:period]) / period
+    average_loss = sum(losses[:period]) / period
 
-    def calculate(gain, loss):
-        if loss == 0:
-            return 100.0 if gain > 0 else 50.0
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
-
-    result[period] = calculate(avg_gain, avg_loss)
-
-    for i in range(period + 1, len(values)):
-        gain = gains[i - 1]
-        loss = losses[i - 1]
-
-        avg_gain = (
-            avg_gain * (period - 1) + gain
+    for index in range(period, len(gains)):
+        average_gain = (
+            average_gain * (period - 1) + gains[index]
         ) / period
 
-        avg_loss = (
-            avg_loss * (period - 1) + loss
+        average_loss = (
+            average_loss * (period - 1) + losses[index]
         ) / period
 
-        result[i] = calculate(avg_gain, avg_loss)
+    if average_loss == 0:
+        return 100.0 if average_gain > 0 else 50.0
 
-    return result
+    relative_strength = average_gain / average_loss
+    return 100 - (100 / (1 + relative_strength))
 
 
-def macd(
-    values: list[float],
-    fast: int = 12,
-    slow: int = 26,
-    signal_period: int = 9,
-) -> dict:
-    fast_values = ema(values, fast)
-    slow_values = ema(values, slow)
+def calculate_macd(closes):
+    fast = ema(closes, 12)
+    slow = ema(closes, 26)
 
-    macd_line = [None] * len(values)
+    if not fast or not slow:
+        return None
 
-    for i in range(len(values)):
-        if fast_values[i] is not None and slow_values[i] is not None:
-            macd_line[i] = fast_values[i] - slow_values[i]
+    offset = 26 - 12
+    macd_line = [
+        fast[index + offset] - slow[index]
+        for index in range(len(slow))
+    ]
 
-    valid_start = next(
-        (i for i, value in enumerate(macd_line) if value is not None),
-        len(values)
-    )
+    signal_line = ema(macd_line, 9)
 
-    valid_macd = macd_line[valid_start:]
-    signal_valid = ema(valid_macd, signal_period)
+    if not signal_line:
+        return None
 
-    signal_line = [None] * len(values)
-    histogram = [None] * len(values)
-
-    for offset, value in enumerate(signal_valid):
-        index = valid_start + offset
-        signal_line[index] = value
-
-        if value is not None:
-            histogram[index] = macd_line[index] - value
+    macd_value = macd_line[-1]
+    signal_value = signal_line[-1]
 
     return {
-        "macd": macd_line,
-        "signal": signal_line,
-        "histogram": histogram,
+        "macd": macd_value,
+        "signal": signal_value,
+        "histogram": macd_value - signal_value,
     }
 
 
-def bollinger_bands(
-    values: list[float],
-    period: int = 20,
-    deviations: float = 2.0,
-) -> dict:
-    middle = sma(values, period)
-    upper = [None] * len(values)
-    lower = [None] * len(values)
+def calculate_bollinger(closes, period=20, multiplier=2):
+    if len(closes) < period:
+        return None
 
-    for i in range(period - 1, len(values)):
-        window = values[i - period + 1:i + 1]
-        mean = middle[i]
+    middle = sma(closes, period)
+    recent = closes[-period:]
 
-        variance = sum(
-            (value - mean) ** 2 for value in window
-        ) / period
+    variance = sum(
+        (value - middle) ** 2 for value in recent
+    ) / period
 
-        standard_deviation = math.sqrt(variance)
-
-        upper[i] = mean + deviations * standard_deviation
-        lower[i] = mean - deviations * standard_deviation
+    deviation = variance ** 0.5
 
     return {
-        "upper": upper,
+        "upper": middle + multiplier * deviation,
         "middle": middle,
-        "lower": lower,
+        "lower": middle - multiplier * deviation,
     }
 
 
-def atr(
-    highs: list[float],
-    lows: list[float],
-    closes: list[float],
-    period: int = 14,
-) -> list[Optional[float]]:
-    length = min(len(highs), len(lows), len(closes))
-    result = [None] * length
-
-    if period <= 0 or length <= period:
-        return result
+def calculate_atr(candles, period=14):
+    if len(candles) <= period:
+        return None
 
     true_ranges = []
 
-    for i in range(length):
-        if i == 0:
-            tr = highs[i] - lows[i]
-        else:
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
+    for index in range(1, len(candles)):
+        current = candles[index]
+        previous = candles[index - 1]
 
-        true_ranges.append(tr)
+        high = _number(current.get("high"))
+        low = _number(current.get("low"))
+        previous_close = _number(previous.get("close"))
 
-    current = sum(true_ranges[:period]) / period
-    result[period - 1] = current
+        true_range = max(
+            high - low,
+            abs(high - previous_close),
+            abs(low - previous_close),
+        )
 
-    for i in range(period, length):
-        current = (
-            current * (period - 1) + true_ranges[i]
+        true_ranges.append(true_range)
+
+    if len(true_ranges) < period:
+        return None
+
+    value = sum(true_ranges[:period]) / period
+
+    for current in true_ranges[period:]:
+        value = (
+            value * (period - 1) + current
         ) / period
 
-        result[i] = current
-
-    return result
+    return value
 
 
-def analyze_market(candles: list[dict]) -> dict:
-    """
-    Analyze OHLCV candles.
-    Confidence is a technical confluence score, not a win probability.
-    """
+def calculate_volume_ratio(candles, period=20):
+    if len(candles) < period + 1:
+        return None
 
-    if len(candles) < 50:
-        return {
-            "status": "insufficient_data",
-            "message": "At least 50 candles are required.",
-        }
+    previous_volumes = [
+        _number(candle.get("volume"))
+        for candle in candles[-period - 1:-1]
+    ]
 
-    try:
-        closes = [float(c["close"]) for c in candles]
-        highs = [float(c["high"]) for c in candles]
-        lows = [float(c["low"]) for c in candles]
-        volumes = [float(c.get("volume", 0)) for c in candles]
+    average = sum(previous_volumes) / period
 
-        if not all(
-            math.isfinite(value)
-            for value in closes + highs + lows + volumes
-        ):
-            raise ValueError("Non-finite market data")
+    if average <= 0:
+        return None
 
-        if any(value <= 0 for value in closes):
-            raise ValueError("Invalid closing price")
+    return _number(candles[-1].get("volume")) / average
 
-        if any(h < l for h, l in zip(highs, lows)):
-            raise ValueError("Invalid candle range")
 
-    except (KeyError, TypeError, ValueError) as exc:
-        return {
-            "status": "invalid_data",
-            "message": str(exc),
-        }
+def analyze_market(candles):
+    if not isinstance(candles, list) or len(candles) < 50:
+        raise ValueError("At least 50 candles are required")
 
-    ema20 = ema(closes, 20)
-    ema50 = ema(closes, 50)
-    rsi_values = rsi(closes)
-    macd_values = macd(closes)
-    bands = bollinger_bands(closes)
-    atr_values = atr(highs, lows, closes)
+    closes = [
+        _number(candle.get("close"))
+        for candle in candles
+    ]
 
-    last = -1
-    price = closes[last]
+    if any(value <= 0 for value in closes):
+        raise ValueError("Invalid candle close price")
 
-    values = {
-        "ema20": ema20[last],
-        "ema50": ema50[last],
-        "rsi": rsi_values[last],
-        "macd": macd_values["macd"][last],
-        "macd_signal": macd_values["signal"][last],
-        "macd_histogram": macd_values["histogram"][last],
-        "bb_upper": bands["upper"][last],
-        "bb_middle": bands["middle"][last],
-        "bb_lower": bands["lower"][last],
-        "atr": atr_values[last],
-    }
+    current_price = closes[-1]
 
-    if any(value is None for value in values.values()):
-        return {
-            "status": "insufficient_data",
-            "message": "Indicators could not be calculated.",
-        }
+    ema20_values = ema(closes, 20)
+    ema50_values = ema(closes, 50)
 
-    bullish = 0
-    bearish = 0
+    if not ema20_values or not ema50_values:
+        raise ValueError("Unable to calculate moving averages")
+
+    ema20 = ema20_values[-1]
+    ema50 = ema50_values[-1]
+
+    rsi = calculate_rsi(closes)
+    macd = calculate_macd(closes)
+    bollinger = calculate_bollinger(closes)
+    atr = calculate_atr(candles)
+    volume_ratio = calculate_volume_ratio(candles)
+
+    score = 50
     reasons = []
 
-    if price > values["ema20"] > values["ema50"]:
-        bullish += 2
-        reasons.append("Price is above EMA20 and EMA50")
-    elif price < values["ema20"] < values["ema50"]:
-        bearish += 2
-        reasons.append("Price is below EMA20 and EMA50")
+    if current_price > ema20:
+        score += 10
+        reasons.append("Цена выше EMA 20")
+    else:
+        score -= 10
+        reasons.append("Цена ниже EMA 20")
 
-    if values["rsi"] >= 55:
-        bullish += 1
-        reasons.append("RSI shows bullish momentum")
-    elif values["rsi"] <= 45:
-        bearish += 1
-        reasons.append("RSI shows bearish momentum")
+    if ema20 > ema50:
+        score += 15
+        reasons.append("EMA 20 выше EMA 50")
+    else:
+        score -= 15
+        reasons.append("EMA 20 ниже EMA 50")
 
-    if values["macd_histogram"] > 0:
-        bullish += 1
-        reasons.append("MACD histogram is positive")
-    elif values["macd_histogram"] < 0:
-        bearish += 1
-        reasons.append("MACD histogram is negative")
+    if rsi is not None:
+        if 50 < rsi < 70:
+            score += 10
+            reasons.append("RSI подтверждает бычий импульс")
+        elif 30 < rsi < 50:
+            score -= 10
+            reasons.append("RSI подтверждает медвежий импульс")
+        elif rsi >= 70:
+            reasons.append("RSI: зона перекупленности")
+        elif rsi <= 30:
+            reasons.append("RSI: зона перепроданности")
 
-    if price > values["bb_middle"]:
-        bullish += 1
-    elif price < values["bb_middle"]:
-        bearish += 1
+    if macd:
+        if macd["histogram"] > 0:
+            score += 10
+            reasons.append("MACD: положительный импульс")
+        elif macd["histogram"] < 0:
+            score -= 10
+            reasons.append("MACD: отрицательный импульс")
 
-    if bullish > bearish:
+    if bollinger:
+        if current_price > bollinger["middle"]:
+            score += 5
+        else:
+            score -= 5
+
+    score = max(0, min(100, score))
+
+    if score >= 65:
         direction = "BUY"
-    elif bearish > bullish:
+    elif score <= 35:
         direction = "SELL"
     else:
         direction = "NEUTRAL"
 
-    total_score = max(bullish, bearish)
-    confidence = round(total_score / 5 * 100, 1)
-
-    if direction == "NEUTRAL":
-        grade = "C"
-    elif confidence >= 80:
+    if score >= 85:
         grade = "S"
-    elif confidence >= 60:
+    elif score >= 70 or score <= 30:
         grade = "A"
-    elif confidence >= 40:
+    elif score >= 60 or score <= 40:
         grade = "B"
     else:
         grade = "C"
 
-    volume_average = (
-        sum(volumes[-20:]) / min(20, len(volumes))
-        if volumes else 0
-    )
-
-    volume_ratio = (
-        volumes[-1] / volume_average
-        if volume_average > 0 else None
-    )
-
     return {
-        "status": "ok",
         "direction": direction,
+        "signal": direction,
+        "score": score,
+        "confluence_score": score,
         "grade": grade,
-        "confidence_score": confidence,
-        "confidence_description": (
-            "Technical confluence score; not a probability of profit."
-        ),
-        "price": price,
+        "entry_price": current_price,
         "indicators": {
-            "ema20": round(values["ema20"], 8),
-            "ema50": round(values["ema50"], 8),
-            "rsi14": round(values["rsi"], 2),
-            "macd": round(values["macd"], 8),
-            "macd_signal": round(values["macd_signal"], 8),
-            "macd_histogram": round(
-                values["macd_histogram"], 8
-            ),
-            "bollinger_upper": round(values["bb_upper"], 8),
-            "bollinger_middle": round(values["bb_middle"], 8),
-            "bollinger_lower": round(values["bb_lower"], 8),
-            "atr14": round(values["atr"], 8),
-            "volume_ratio": (
-                round(volume_ratio, 2)
-                if volume_ratio is not None else None
-            ),
+            "ema_20": ema20,
+            "ema_50": ema50,
+            "rsi": rsi,
+            "macd": macd,
+            "bollinger": bollinger,
+            "atr": atr,
+            "volume_ratio": volume_ratio,
         },
-        "reasons": reasons,
-            }
+        "reasoning": reasons,
+    }
     
