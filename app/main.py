@@ -1,3 +1,4 @@
+
 import asyncio
 import hashlib
 import hmac
@@ -161,7 +162,7 @@ app = FastAPI(
 )
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok", "service": "Trading Intelligence PRO"}
 
