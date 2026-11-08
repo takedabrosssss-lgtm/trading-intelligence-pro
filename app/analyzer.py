@@ -1,16 +1,18 @@
 
-from math import isfinite
+from typing import Any
 
 
-def _number(value, default=0.0):
-    try:
-        result = float(value)
-        return result if isfinite(result) else default
-    except (TypeError, ValueError):
-        return default
+def sma(values: list[float], period: int) -> list[float]:
+    if len(values) < period:
+        return []
+
+    return [
+        sum(values[i - period + 1:i + 1]) / period
+        for i in range(period - 1, len(values))
+    ]
 
 
-def ema(values, period):
+def ema(values: list[float], period: int) -> list[float]:
     if len(values) < period:
         return []
 
@@ -19,42 +21,33 @@ def ema(values, period):
 
     for value in values[period:]:
         result.append(
-            value * multiplier
-            + result[-1] * (1 - multiplier)
+            (value - result[-1]) * multiplier + result[-1]
         )
 
     return result
 
 
-def sma(values, period):
-    if len(values) < period:
+def calculate_rsi(values: list[float], period: int = 14) -> float | None:
+    if len(values) <= period:
         return None
 
-    return sum(values[-period:]) / period
+    changes = [
+        values[i] - values[i - 1]
+        for i in range(1, len(values))
+    ]
 
-
-def calculate_rsi(closes, period=14):
-    if len(closes) <= period:
-        return None
-
-    gains = []
-    losses = []
-
-    for index in range(1, len(closes)):
-        change = closes[index] - closes[index - 1]
-        gains.append(max(change, 0))
-        losses.append(max(-change, 0))
+    gains = [max(change, 0) for change in changes]
+    losses = [max(-change, 0) for change in changes]
 
     average_gain = sum(gains[:period]) / period
     average_loss = sum(losses[:period]) / period
 
-    for index in range(period, len(gains)):
+    for i in range(period, len(changes)):
         average_gain = (
-            average_gain * (period - 1) + gains[index]
+            average_gain * (period - 1) + gains[i]
         ) / period
-
         average_loss = (
-            average_loss * (period - 1) + losses[index]
+            average_loss * (period - 1) + losses[i]
         ) / period
 
     if average_loss == 0:
@@ -64,173 +57,134 @@ def calculate_rsi(closes, period=14):
     return 100 - (100 / (1 + relative_strength))
 
 
-def calculate_macd(closes):
-    fast = ema(closes, 12)
-    slow = ema(closes, 26)
-
-    if not fast or not slow:
-        return None
-
-    offset = 26 - 12
-    macd_line = [
-        fast[index + offset] - slow[index]
-        for index in range(len(slow))
-    ]
-
-    signal_line = ema(macd_line, 9)
-
-    if not signal_line:
-        return None
-
-    macd_value = macd_line[-1]
-    signal_value = signal_line[-1]
-
-    return {
-        "macd": macd_value,
-        "signal": signal_value,
-        "histogram": macd_value - signal_value,
-    }
-
-
-def calculate_bollinger(closes, period=20, multiplier=2):
-    if len(closes) < period:
-        return None
-
-    middle = sma(closes, period)
-    recent = closes[-period:]
-
-    variance = sum(
-        (value - middle) ** 2 for value in recent
-    ) / period
-
-    deviation = variance ** 0.5
-
-    return {
-        "upper": middle + multiplier * deviation,
-        "middle": middle,
-        "lower": middle - multiplier * deviation,
-    }
-
-
-def calculate_atr(candles, period=14):
+def calculate_atr(
+    candles: list[dict[str, Any]],
+    period: int = 14,
+) -> float | None:
     if len(candles) <= period:
         return None
 
     true_ranges = []
 
-    for index in range(1, len(candles)):
-        current = candles[index]
-        previous = candles[index - 1]
+    for i in range(1, len(candles)):
+        current = candles[i]
+        previous_close = float(candles[i - 1]["close"])
 
-        high = _number(current.get("high"))
-        low = _number(current.get("low"))
-        previous_close = _number(previous.get("close"))
+        high = float(current["high"])
+        low = float(current["low"])
 
-        true_range = max(
-            high - low,
-            abs(high - previous_close),
-            abs(low - previous_close),
+        true_ranges.append(
+            max(
+                high - low,
+                abs(high - previous_close),
+                abs(low - previous_close),
+            )
         )
 
-        true_ranges.append(true_range)
+    return sum(true_ranges[-period:]) / period
 
-    if len(true_ranges) < period:
+
+def calculate_macd(
+    values: list[float],
+) -> dict[str, float] | None:
+    fast = ema(values, 12)
+    slow = ema(values, 26)
+
+    if not fast or not slow:
         return None
 
-    value = sum(true_ranges[:period]) / period
+    macd_line = fast[-1] - slow[-1]
 
-    for current in true_ranges[period:]:
-        value = (
-            value * (period - 1) + current
-        ) / period
+    return {
+        "macd": macd_line,
+        "signal": 0.0,
+        "histogram": macd_line,
+    }
 
-    return value
 
-
-def calculate_volume_ratio(candles, period=20):
-    if len(candles) < period + 1:
+def calculate_bollinger(
+    values: list[float],
+    period: int = 20,
+) -> dict[str, float] | None:
+    if len(values) < period:
         return None
 
-    previous_volumes = [
-        _number(candle.get("volume"))
-        for candle in candles[-period - 1:-1]
-    ]
+    window = values[-period:]
+    middle = sum(window) / period
 
-    average = sum(previous_volumes) / period
+    variance = sum(
+        (value - middle) ** 2 for value in window
+    ) / period
 
-    if average <= 0:
-        return None
+    deviation = variance ** 0.5
 
-    return _number(candles[-1].get("volume")) / average
+    return {
+        "upper": middle + 2 * deviation,
+        "middle": middle,
+        "lower": middle - 2 * deviation,
+    }
 
 
-def analyze_market(candles):
-    if not isinstance(candles, list) or len(candles) < 50:
+def analyze_market(
+    candles: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not candles or len(candles) < 50:
         raise ValueError("At least 50 candles are required")
 
-    closes = [
-        _number(candle.get("close"))
-        for candle in candles
-    ]
+    closes = [float(candle["close"]) for candle in candles]
 
     if any(value <= 0 for value in closes):
-        raise ValueError("Invalid candle close price")
+        raise ValueError("Candle close prices must be positive")
 
     current_price = closes[-1]
 
     ema20_values = ema(closes, 20)
     ema50_values = ema(closes, 50)
-
-    if not ema20_values or not ema50_values:
-        raise ValueError("Unable to calculate moving averages")
-
-    ema20 = ema20_values[-1]
-    ema50 = ema50_values[-1]
-
     rsi = calculate_rsi(closes)
     macd = calculate_macd(closes)
-    bollinger = calculate_bollinger(closes)
     atr = calculate_atr(candles)
-    volume_ratio = calculate_volume_ratio(candles)
+    bollinger = calculate_bollinger(closes)
+
+    if not ema20_values or not ema50_values:
+        raise ValueError("Not enough data for EMA calculation")
+
+    ema20_value = ema20_values[-1]
+    ema50_value = ema50_values[-1]
 
     score = 50
-    reasons = []
+    reasoning = []
 
-    if current_price > ema20:
+    if current_price > ema20_value:
         score += 10
-        reasons.append("Цена выше EMA 20")
+        reasoning.append("Price above EMA20")
     else:
         score -= 10
-        reasons.append("Цена ниже EMA 20")
+        reasoning.append("Price below EMA20")
 
-    if ema20 > ema50:
+    if ema20_value > ema50_value:
         score += 15
-        reasons.append("EMA 20 выше EMA 50")
+        reasoning.append("Bullish EMA alignment")
     else:
         score -= 15
-        reasons.append("EMA 20 ниже EMA 50")
+        reasoning.append("Bearish EMA alignment")
 
     if rsi is not None:
-        if 50 < rsi < 70:
+        if rsi > 55:
             score += 10
-            reasons.append("RSI подтверждает бычий импульс")
-        elif 30 < rsi < 50:
+            reasoning.append("RSI bullish momentum")
+        elif rsi < 45:
             score -= 10
-            reasons.append("RSI подтверждает медвежий импульс")
-        elif rsi >= 70:
-            reasons.append("RSI: зона перекупленности")
-        elif rsi <= 30:
-            reasons.append("RSI: зона перепроданности")
+            reasoning.append("RSI bearish momentum")
 
-    if macd:
+    if macd is not None:
         if macd["histogram"] > 0:
             score += 10
-            reasons.append("MACD: положительный импульс")
+            reasoning.append("MACD bullish")
         elif macd["histogram"] < 0:
             score -= 10
-            reasons.append("MACD: отрицательный импульс")
+            reasoning.append("MACD bearish")
 
-    if bollinger:
+    if bollinger is not None:
         if current_price > bollinger["middle"]:
             score += 5
         else:
@@ -245,7 +199,7 @@ def analyze_market(candles):
     else:
         direction = "NEUTRAL"
 
-    if score >= 85:
+    if score >= 85 or score <= 15:
         grade = "S"
     elif score >= 70 or score <= 30:
         grade = "A"
@@ -256,20 +210,17 @@ def analyze_market(candles):
 
     return {
         "direction": direction,
-        "signal": direction,
         "score": score,
-        "confluence_score": score,
         "grade": grade,
         "entry_price": current_price,
         "indicators": {
-            "ema_20": ema20,
-            "ema_50": ema50,
+            "ema20": ema20_value,
+            "ema50": ema50_value,
             "rsi": rsi,
             "macd": macd,
-            "bollinger": bollinger,
             "atr": atr,
-            "volume_ratio": volume_ratio,
+            "bollinger": bollinger,
         },
-        "reasoning": reasons,
+        "reasoning": reasoning,
     }
     
