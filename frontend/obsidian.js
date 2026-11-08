@@ -688,3 +688,17 @@
 
   document.addEventListener("click", e => {
     if (e.target.closest('[data-page="dashboard"]')) 
+      {
+      setTimeout(() => {
+        addOrbs();
+        restyleBrand();
+        restyleNav();
+        addDashboardBlocks();
+        decorateCoins();
+        refreshStats();
+      }, 80);
+    }
+  });
+
+  setInterval(refreshStats, 60000);
+})();
