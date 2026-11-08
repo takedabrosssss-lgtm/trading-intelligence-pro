@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 from html import escape
@@ -49,7 +48,7 @@ async def start_command(message: Message):
         return
 
     await message.answer(
-        " <b>Trading Intelligence PRO</b>\n\n"
+        "<b>Trading Intelligence PRO</b>\n\n"
         "Персональная торговая аналитическая система.\n"
         "Режим: Paper Trading.\n\n"
         "Команды:\n"
@@ -114,12 +113,10 @@ async def summary_command(message: Message):
             float(account.balance or 0)
             for account in accounts
         )
-
         total_initial = sum(
             float(account.initial_balance or 0)
             for account in accounts
         )
-
         pnl = total_balance - total_initial
 
         lines = [
@@ -137,10 +134,7 @@ async def summary_command(message: Message):
                 f"${float(account.balance or 0):,.2f}"
             )
 
-        await message.answer(
-            "\n".join(lines),
-            parse_mode="HTML",
-        )
+        await message.answer("\n".join(lines), parse_mode="HTML")
 
     finally:
         db.close()
@@ -157,42 +151,38 @@ async def signals_command(message: Message):
     try:
         signals = (
             db.query(Signal)
-            .filter(Signal.status.in_(["new", "eligible"]))
+            .filter(Signal.status.in_(["new", "eligible", "sent"]))
             .order_by(Signal.id.desc())
             .limit(10)
             .all()
         )
 
         if not signals:
-            await message.answer(
-                "Новых подходящих сигналов пока нет."
-            )
+            await message.answer("Новых подходящих сигналов пока нет.")
             return
 
         lines = ["<b>Последние торговые сигналы</b>", ""]
 
         for signal in signals:
+            direction = "ПОКУПКА" if signal.direction == "BUY" else "ПРОДАЖА"
             lines.extend([
                 f"<b>{escape(signal.symbol)}</b> · {escape(signal.timeframe)}",
-                f"Направление: {escape(signal.direction)}",
-                f"Оценка: {signal.score}/100 · Grade {escape(signal.grade or '—')}",
-                f"Вход: {float(signal.entry_price or 0):,.6g}",
+                f"Направление: {direction}",
+                f"Оценка: {int(signal.score or 0)}/100 · Grade {escape(signal.grade or '—')}",
+                f"Вход: {float(signal.entry_price or 0):,.8g}",
+                f"SL: {float(signal.stop_loss or 0):,.8g} · TP: {float(signal.take_profit or 0):,.8g}",
                 "",
             ])
 
-        await message.answer(
-            "\n".join(lines),
-            parse_mode="HTML",
-        )
+        await message.answer("\n".join(lines), parse_mode="HTML")
 
     finally:
         db.close()
 
 
-async def main():
+async def run_bot():
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN is not configured")
-
     if not settings.allowed_user_ids:
         raise RuntimeError("OWNER_TELEGRAM_ID is not configured")
 
@@ -203,12 +193,15 @@ async def main():
     logger.info("Trading Intelligence Telegram bot starting")
 
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.delete_webhook(drop_pending_updates=False)
         await dispatcher.start_polling(bot)
     finally:
         await bot.session.close()
 
 
+async def main():
+    await run_bot()
+
+
 if __name__ == "__main__":
     asyncio.run(main())
-    

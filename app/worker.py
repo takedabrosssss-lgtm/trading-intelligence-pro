@@ -1,6 +1,9 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from html import escape
+
+from aiogram import Bot
 
 from app.config import settings
 from app.database import SessionLocal, Signal, init_db
@@ -37,10 +40,116 @@ def already_exists(db, signal):
         Signal.direction == signal["direction"],
         Signal.grade == signal["grade"],
         Signal.created_at >= cutoff,
-        Signal.status.in_(["new", "eligible"]),
+        Signal.status.in_(["new", "eligible", "sent"]),
     )
 
     return db.query(query.exists()).scalar()
+
+
+def format_signal_message(signal):
+    direction = "ПОКУПКА" if signal.direction == "BUY" else "ПРОДАЖА"
+    emoji = "🟢" if signal.direction == "BUY" else "🔴"
+    strategy_names = {
+        "scalping": "Scalping",
+        "intraday": "Intraday",
+        "swing": "Swing",
+    }
+
+    entry = float(signal.entry_price or 0)
+    stop = float(signal.stop_loss or 0)
+    target = float(signal.take_profit or 0)
+
+    if entry >= 1000:
+        digits = 2
+    elif entry >= 1:
+        digits = 4
+    else:
+        digits = 8
+
+    reasoning = (signal.reasoning or "").strip()
+    if len(reasoning) > 700:
+        reasoning = reasoning[:697] + "..."
+
+    lines = [
+        f"{emoji} <b>НОВЫЙ ТОРГОВЫЙ СИГНАЛ</b>",
+        "",
+        f"<b>{escape(signal.symbol)}</b> · {escape(signal.timeframe)}",
+        f"Направление: <b>{direction}</b>",
+        f"Оценка: <b>{int(signal.score or 0)}/100</b> · Grade <b>{escape(signal.grade or '—')}</b>",
+        f"Стратегия: {escape(strategy_names.get(signal.strategy, signal.strategy or '—'))}",
+        "",
+        f"Вход: <code>{entry:,.{digits}f}</code>",
+        f"Stop Loss: <code>{stop:,.{digits}f}</code>",
+        f"Take Profit: <code>{target:,.{digits}f}</code>",
+        "",
+    ]
+
+    if reasoning:
+        lines.extend([
+            "<b>Основание:</b>",
+            escape(reasoning),
+            "",
+        ])
+
+    lines.extend([
+        "Режим: <b>Paper Trading</b>",
+        "Сигнал аналитический. Результат не гарантирован.",
+    ])
+
+    return "\n".join(lines)
+
+
+async def deliver_pending_signals():
+    if not settings.bot_token or not settings.owner_telegram_id:
+        logger.warning(
+            "Telegram delivery skipped: BOT_TOKEN or OWNER_TELEGRAM_ID missing"
+        )
+        return 0
+
+    db = SessionLocal()
+    delivered = 0
+
+    try:
+        pending = (
+            db.query(Signal)
+            .filter(Signal.status == "new")
+            .order_by(Signal.id.asc())
+            .limit(20)
+            .all()
+        )
+
+        if not pending:
+            return 0
+
+        async with Bot(token=settings.bot_token) as bot:
+            for signal in pending:
+                try:
+                    await bot.send_message(
+                        chat_id=settings.owner_telegram_id,
+                        text=format_signal_message(signal),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    signal.status = "sent"
+                    db.commit()
+                    delivered += 1
+                    logger.info(
+                        "Telegram signal delivered: id=%s %s %s",
+                        signal.id,
+                        signal.symbol,
+                        signal.timeframe,
+                    )
+                except Exception:
+                    db.rollback()
+                    logger.exception(
+                        "Telegram delivery failed for signal id=%s",
+                        signal.id,
+                    )
+
+    finally:
+        db.close()
+
+    return delivered
 
 
 async def scan_market():
@@ -90,7 +199,7 @@ async def scan_market():
                     saved += 1
 
                     logger.info(
-                        "New signal: %s %s %s grade=%s",
+                        "New signal saved: %s %s %s grade=%s",
                         symbol,
                         timeframe,
                         signal["direction"],
@@ -113,15 +222,21 @@ async def scan_market():
 
 async def run_worker():
     init_db()
-    logger.info("Trading Intelligence scanner started")
+    logger.info(
+        "Trading Intelligence scanner started; interval=%ss",
+        settings.scan_interval_seconds,
+    )
 
     while True:
         try:
             await scan_market()
+            await deliver_pending_signals()
+        except asyncio.CancelledError:
+            raise
         except Exception:
             logger.exception("Scanner cycle failed")
 
-        await asyncio.sleep(settings.scan_interval_seconds)
+        await asyncio.sleep(max(60, settings.scan_interval_seconds))
 
 
 if __name__ == "__main__":

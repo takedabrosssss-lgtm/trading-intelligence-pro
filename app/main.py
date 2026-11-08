@@ -1,4 +1,4 @@
-
+import asyncio
 import hashlib
 import hmac
 import json
@@ -6,6 +6,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl
+from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -23,8 +24,7 @@ from app.database import (
 )
 from app.market_data import market_data
 from app.analyzer import analyze_market
-
-from pathlib import Path
+from app.worker import run_worker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-intelligence")
@@ -87,6 +87,23 @@ def require_user(x_telegram_init_data: str = Header(default="")):
     return validate_telegram_init_data(x_telegram_init_data)
 
 
+async def run_bot_supervisor():
+    if not settings.bot_token:
+        logger.warning("BOT_TOKEN is missing; Telegram bot polling is disabled")
+        return
+
+    from app.bot import run_bot
+
+    while True:
+        try:
+            await run_bot()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Telegram bot stopped; retrying in 15 seconds")
+            await asyncio.sleep(15)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -111,14 +128,26 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    background_tasks = [
+        asyncio.create_task(run_worker(), name="market-signal-scanner"),
+        asyncio.create_task(run_bot_supervisor(), name="telegram-bot-polling"),
+    ]
+
     logger.info("Trading Intelligence PRO started")
-    yield
-    logger.info("Trading Intelligence PRO stopped")
+    logger.info("Background scanner and Telegram bot tasks scheduled")
+
+    try:
+        yield
+    finally:
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        logger.info("Trading Intelligence PRO stopped")
 
 
 app = FastAPI(
     title="Trading Intelligence PRO",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 
@@ -168,9 +197,7 @@ async def market_klines(
         raise HTTPException(400, "Unsupported interval")
 
     try:
-        return await market_data.get_klines(
-            symbol.upper(), interval, limit
-        )
+        return await market_data.get_klines(symbol.upper(), interval, limit)
     except Exception as exc:
         logger.warning("Klines error: %s", exc)
         raise HTTPException(502, "Candles unavailable")
@@ -183,30 +210,22 @@ async def analysis(
     user=__import__("fastapi").Depends(require_user),
 ):
     try:
-        candles = await market_data.get_klines(
-            symbol.upper(), interval, 200
-        )
-
+        candles = await market_data.get_klines(symbol.upper(), interval, 200)
         result = analyze_market(candles)
         result["symbol"] = symbol.upper()
         result["interval"] = interval
-
         return result
-
     except Exception as exc:
         logger.warning("Analysis error: %s", exc)
         raise HTTPException(502, "Analysis unavailable")
 
 
 @app.get("/api/portfolio")
-async def portfolio(
-    user=__import__("fastapi").Depends(require_user),
-):
+async def portfolio(user=__import__("fastapi").Depends(require_user)):
     db = SessionLocal()
 
     try:
         accounts = db.query(PaperAccount).all()
-
         account_data = []
         total_balance = 0.0
         total_initial = 0.0
@@ -240,7 +259,6 @@ async def portfolio(
             "total_pnl": total_equity - total_initial,
             "accounts": account_data,
         }
-
     finally:
         db.close()
 
@@ -272,7 +290,6 @@ async def history(
                 for trade in trades
             ]
         }
-
     finally:
         db.close()
 
@@ -291,5 +308,4 @@ app.mount(
     "/",
     StaticFiles(directory=str(FRONTEND_DIR), html=True),
     name="frontend",
-        )
-    
+)
