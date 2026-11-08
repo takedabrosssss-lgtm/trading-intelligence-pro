@@ -4,61 +4,38 @@ import hmac
 import json
 import logging
 import time
-
-from pathlib import Path
+from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import (
+    AppSetting,
     PaperAccount,
     Position,
     Trade,
-    get_db,
+    User,
+    SessionLocal,
     init_db,
 )
-from app.market_data import market_data, MarketDataError
-from app.signals import generate_signal
+from app.market_data import market_data
+from app.analyzer import analyze_market
+
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("trading-intelligence")
 
-app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
-    redoc_url=None,
-)
-
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-
-STRATEGIES = [
-    "scalping",
-    "intraday",
-    "swing",
-    "position",
-]
+BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
 
 
 def validate_telegram_init_data(init_data: str) -> dict:
-    """Validate Telegram Mini App initData."""
-
-    token = settings.telegram_token
-
-    if not token:
-        raise HTTPException(
-            status_code=503,
-            detail="Telegram bot token is not configured.",
-        )
-
-    if not init_data:
-        raise HTTPException(
-            status_code=401,
-            detail="Telegram authorization required.",
-        )
+    if not init_data or not settings.telegram_token:
+        raise HTTPException(401, "Telegram authorization required")
 
     try:
         parsed = dict(parse_qsl(init_data, keep_blank_values=True))
@@ -69,17 +46,16 @@ def validate_telegram_init_data(init_data: str) -> dict:
 
         auth_date = int(parsed.get("auth_date", "0"))
 
-        if auth_date <= 0 or time.time() - auth_date > 86400:
-            raise ValueError("Expired authorization")
+        if time.time() - auth_date > 86400 or auth_date > time.time() + 60:
+            raise ValueError("Expired authentication")
 
         data_check_string = "\n".join(
-            f"{key}={value}"
-            for key, value in sorted(parsed.items())
+            f"{key}={value}" for key, value in sorted(parsed.items())
         )
 
         secret_key = hmac.new(
             b"WebAppData",
-            token.encode(),
+            settings.telegram_token.encode(),
             hashlib.sha256,
         ).digest()
 
@@ -89,97 +65,75 @@ def validate_telegram_init_data(init_data: str) -> dict:
             hashlib.sha256,
         ).hexdigest()
 
-        if not hmac.compare_digest(
-            calculated_hash,
-            received_hash,
-        ):
+        if not hmac.compare_digest(calculated_hash, received_hash):
             raise ValueError("Invalid signature")
 
-        user = json.loads(parsed.get("user", "{}"))
+        user_data = json.loads(parsed.get("user", "{}"))
+        user_id = str(user_data.get("id", ""))
 
-        telegram_id = str(user.get("id", ""))
+        if not user_id or user_id not in settings.allowed_user_ids:
+            raise HTTPException(403, "Access denied")
 
-        if not telegram_id:
-            raise ValueError("Missing Telegram user")
-
-        allowed_ids = settings.allowed_user_ids
-
-        if not allowed_ids or telegram_id not in allowed_ids:
-            raise HTTPException(
-                status_code=403,
-                detail="This account is not authorized.",
-            )
-
-        return user
+        return user_data
 
     except HTTPException:
         raise
     except Exception as exc:
         logger.warning("Telegram authorization failed: %s", exc)
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Telegram authorization.",
-        ) from exc
+        raise HTTPException(401, "Invalid Telegram authorization")
 
 
-async def require_telegram_user(
-    x_telegram_init_data: str = Header(
-        default="",
-        alias="X-Telegram-Init-Data",
-    ),
-):
+def require_user(x_telegram_init_data: str = Header(default="")):
     return validate_telegram_init_data(x_telegram_init_data)
 
 
-@app.on_event("startup")
-def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     init_db()
 
-    db = next(get_db())
-
+    db = SessionLocal()
     try:
-        existing = db.query(PaperAccount).count()
+        for name in ("Scalping", "Intraday", "Swing", "Position"):
+            account = db.query(PaperAccount).filter(
+                PaperAccount.name == name
+            ).first()
 
-        if existing == 0:
-            for strategy in STRATEGIES:
-                db.add(
-                    PaperAccount(
-                        name=f"{strategy.capitalize()} Account",
-                        strategy=strategy,
-                        initial_balance=settings.STRATEGY_CAPITAL,
-                        balance=settings.STRATEGY_CAPITAL,
-                        equity=settings.STRATEGY_CAPITAL,
-                        max_drawdown=settings.MAX_DRAWDOWN,
-                    )
+            if not account:
+                account = PaperAccount(
+                    name=name,
+                    strategy=name.lower(),
+                    balance=2500.0,
+                    initial_balance=2500.0,
                 )
+                db.add(account)
 
-            db.commit()
-
-        logger.info("Trading Intelligence PRO initialized.")
-
-    except Exception:
-        db.rollback()
-        logger.exception("Database initialization failed.")
-        raise
+        db.commit()
     finally:
         db.close()
+
+    logger.info("Trading Intelligence PRO started")
+    yield
+    logger.info("Trading Intelligence PRO stopped")
+
+
+app = FastAPI(
+    title="Trading Intelligence PRO",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok",
-        "application": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-    }
+    return {"status": "ok", "service": "Trading Intelligence PRO"}
 
 
 @app.get("/api/status")
-async def api_status(user: dict = Depends(require_telegram_user)):
+async def api_status(user: dict = Header(default=None)):
     return {
-        "status": "ok",
-        "user": user.get("username"),
-        "version": settings.APP_VERSION,
+        "status": "online",
+        "service": "Trading Intelligence PRO",
+        "market_data": "Binance public API",
         "mode": "paper_trading",
     }
 
@@ -187,184 +141,155 @@ async def api_status(user: dict = Depends(require_telegram_user)):
 @app.get("/api/market/price/{symbol}")
 async def market_price(
     symbol: str,
-    user: dict = Depends(require_telegram_user),
+    user=__import__("fastapi").Depends(require_user),
 ):
+    symbol = symbol.upper()
+
+    if not symbol.endswith("USDT") or not symbol[:-4].isalnum():
+        raise HTTPException(400, "Invalid symbol")
+
     try:
         return await market_data.get_24h_ticker(symbol)
-    except MarketDataError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=str(exc),
-        ) from exc
+    except Exception as exc:
+        logger.warning("Market price error: %s", exc)
+        raise HTTPException(502, "Market data temporarily unavailable")
 
 
 @app.get("/api/market/klines/{symbol}")
 async def market_klines(
     symbol: str,
     interval: str = Query(default="1h"),
-    limit: int = Query(default=200, ge=1, le=1000),
-    user: dict = Depends(require_telegram_user),
+    limit: int = Query(default=200, ge=50, le=500),
+    user=__import__("fastapi").Depends(require_user),
 ):
+    allowed = {"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"}
+
+    if interval not in allowed:
+        raise HTTPException(400, "Unsupported interval")
+
     try:
-        candles = await market_data.get_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
+        return await market_data.get_klines(
+            symbol.upper(), interval, limit
         )
-
-        return {
-            "symbol": symbol.upper(),
-            "interval": interval,
-            "source": "Binance Spot",
-            "candles": candles,
-        }
-
-    except (MarketDataError, ValueError) as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=str(exc),
-        ) from exc
+    except Exception as exc:
+        logger.warning("Klines error: %s", exc)
+        raise HTTPException(502, "Candles unavailable")
 
 
 @app.get("/api/analysis/{symbol}")
-async def market_analysis(
+async def analysis(
     symbol: str,
     interval: str = Query(default="1h"),
-    user: dict = Depends(require_telegram_user),
+    user=__import__("fastapi").Depends(require_user),
 ):
     try:
         candles = await market_data.get_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=200,
+            symbol.upper(), interval, 200
         )
 
-        return generate_signal(
-            symbol=symbol,
-            candles=candles,
-            market="crypto",
-            timeframe=interval,
-            strategy="intraday",
-        )
+        result = analyze_market(candles)
+        result["symbol"] = symbol.upper()
+        result["interval"] = interval
 
-    except (MarketDataError, ValueError) as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=str(exc),
-        ) from exc
+        return result
+
+    except Exception as exc:
+        logger.warning("Analysis error: %s", exc)
+        raise HTTPException(502, "Analysis unavailable")
 
 
 @app.get("/api/portfolio")
 async def portfolio(
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_telegram_user),
+    user=__import__("fastapi").Depends(require_user),
 ):
-    accounts = db.query(PaperAccount).all()
+    db = SessionLocal()
 
-    account_data = []
+    try:
+        accounts = db.query(PaperAccount).all()
 
-    total_initial = 0.0
-    total_balance = 0.0
-    total_equity = 0.0
+        account_data = []
+        total_balance = 0.0
+        total_initial = 0.0
+        total_equity = 0.0
 
-    for account in accounts:
-        positions = (
-            db.query(Position)
-            .filter(
+        for account in accounts:
+            positions = db.query(Position).filter(
                 Position.account_id == account.id,
                 Position.status == "open",
-            )
-            .all()
-        )
+            ).all()
 
-        unrealized = sum(
-            position.unrealized_pnl or 0
-            for position in positions
-        )
+            balance = float(account.balance or 0)
+            equity = balance
 
-        equity = account.balance + unrealized
+            account_data.append({
+                "name": account.name,
+                "strategy": account.strategy,
+                "balance": balance,
+                "equity": equity,
+                "open_positions": len(positions),
+            })
 
-        total_initial += account.initial_balance
-        total_balance += account.balance
-        total_equity += equity
+            total_balance += balance
+            total_initial += float(account.initial_balance or 0)
+            total_equity += equity
 
-        account_data.append({
-            "id": account.id,
-            "name": account.name,
-            "strategy": account.strategy,
-            "initial_balance": account.initial_balance,
-            "balance": round(account.balance, 2),
-            "equity": round(equity, 2),
-            "unrealized_pnl": round(unrealized, 2),
-            "open_positions": len(positions),
-            "active": account.is_active,
-        })
+        return {
+            "initial_capital": total_initial,
+            "balance": total_balance,
+            "equity": total_equity,
+            "total_pnl": total_equity - total_initial,
+            "accounts": account_data,
+        }
 
-    return {
-        "mode": "paper_trading",
-        "currency": "USD",
-        "initial_capital": round(total_initial, 2),
-        "balance": round(total_balance, 2),
-        "equity": round(total_equity, 2),
-        "total_pnl": round(total_equity - total_initial, 2),
-        "accounts": account_data,
-    }
+    finally:
+        db.close()
 
 
 @app.get("/api/history")
-async def trade_history(
+async def history(
     limit: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_telegram_user),
+    user=__import__("fastapi").Depends(require_user),
 ):
-    trades = (
-        db.query(Trade)
-        .order_by(Trade.closed_at.desc())
-        .limit(limit)
-        .all()
-    )
+    db = SessionLocal()
 
-    return {
-        "count": len(trades),
-        "trades": [
-            {
-                "id": trade.id,
-                "symbol": trade.symbol,
-                "direction": trade.direction,
-                "quantity": trade.quantity,
-                "entry_price": trade.entry_price,
-                "exit_price": trade.exit_price,
-                "net_pnl": trade.net_pnl,
-                "strategy": trade.strategy,
-                "exit_reason": trade.exit_reason,
-                "closed_at": (
-                    trade.closed_at.isoformat()
-                    if trade.closed_at else None
-                ),
-            }
-            for trade in trades
-        ],
-    }
+    try:
+        trades = (
+            db.query(Trade)
+            .order_by(Trade.id.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return {
+            "trades": [
+                {
+                    "symbol": trade.symbol,
+                    "direction": trade.direction,
+                    "strategy": trade.strategy,
+                    "net_pnl": trade.net_pnl,
+                    "exit_reason": trade.exit_reason,
+                }
+                for trade in trades
+            ]
+        }
+
+    finally:
+        db.close()
 
 
-@app.get("/api/market/health")
-async def market_health(
-    user: dict = Depends(require_telegram_user),
-):
-    available = await market_data.health_check()
+@app.get("/")
+async def index():
+    file = FRONTEND_DIR / "index.html"
 
-    return {
-        "provider": "Binance Spot",
-        "available": available,
-    }
+    if not file.exists():
+        raise HTTPException(404, "Frontend not found")
+
+    return FileResponse(file)
 
 
-if FRONTEND_DIR.exists():
-    app.mount(
-        "/",
-        StaticFiles(directory=str(FRONTEND_DIR), html=True),
-        name="frontend",
-    )
-else:
-    logger.warning("Frontend directory not found: %s", FRONTEND_DIR)
+app.mount(
+    "/",
+    StaticFiles(directory=str(FRONTEND_DIR), html=True),
+    name="frontend",
+        )
     
