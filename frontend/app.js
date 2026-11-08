@@ -1,11 +1,104 @@
-const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();document.body.style.paddingBottom="env(safe-area-inset-bottom)"}
-const $=id=>document.getElementById(id);
-const fmt=n=>n==null?"—":Number(n).toLocaleString("en-US",{maximumFractionDigits:6});
-const assets=["BTCUSDT","ETHUSDT","SOLUSDT","EURUSD","XAUUSD","NAS100"];
-document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".tab,.panel").forEach(x=>x.classList.remove("active"));b.classList.add("active");$(b.dataset.tab).classList.add("active");if(b.dataset.tab==="stats")loadStats();if(b.dataset.tab==="history")loadSignals()}));
-function signalCard(s){return `<article class="card"><div class="card-top"><b>${s.symbol}</b><b class="direction ${s.direction.toLowerCase()}">${s.direction}</b></div><p class="muted">${s.status} · ${s.timeframe||"1h"} · ${s.created_at?new Date(s.created_at).toLocaleString():""}</p><div class="metrics"><div class="metric"><span>ENTRY</span><b>${fmt(s.entry)}</b></div><div class="metric"><span>STOP LOSS</span><b>${fmt(s.sl)}</b></div><div class="metric"><span>TAKE PROFIT 1</span><b>${fmt(s.tp1)}</b></div><div class="metric"><span>TAKE PROFIT 2</span><b>${fmt(s.tp2)}</b></div></div><p class="muted">Исторический winrate: ${s.historical_winrate}% · Выборка: ${s.sample_size}</p></article>`}
-async function loadSignals(){try{let r=await fetch("/api/signals");if(!r.ok)throw Error();let rows=await r.json();let active=rows.filter(x=>["ACTIVE","TP1","PUBLISHED"].includes(x.status));let closed=rows.filter(x=>x.status==="CLOSED");$("signal-list").innerHTML=active.length?active.map(signalCard).join(""):'<p class="muted">Активных сигналов нет.</p>';$("dash-signals").innerHTML=rows.slice(0,4).map(signalCard).join("")||'<p class="muted">Сигналов пока нет.</p>';$("history-list").innerHTML=closed.length?closed.map(signalCard).join(""):'<p class="muted">Закрытых сделок пока нет.</p>'}catch(e){$("signal-list").innerHTML='<p class="muted">API пока недоступен.</p>'}}
-async function loadStats(){try{let s=await(await fetch("/api/stats")).json();let vals=[["Всего сигналов",s.total],["Активные",s.active],["Закрытые",s.closed],["TP",s.wins],["SL",s.losses],["Winrate",s.realized_winrate==null?"—":s.realized_winrate+"%"]];$("stats-grid").innerHTML=vals.map(v=>`<div class="stat"><span>${v[0]}</span><b>${v[1]}</b></div>`).join("")}catch(e){}}
-function renderAssets(){ $("assets").innerHTML=assets.map(a=>`<div class="asset"><div class="asset-top"><b class="symbol">${a}</b><span class="tag">WATCH</span></div><div class="price">—</div><small>Цена доступна в Telegram / API-провайдере</small></div>`).join("")}
-function tick(){ $("clock").textContent=new Date().toLocaleTimeString();$("updated").textContent="Обновлено "+new Date().toLocaleTimeString()}
-renderAssets();loadSignals();tick();setInterval(()=>{tick();loadSignals()},30000);
+
+"use strict";
+
+/*
+ * Trading Intelligence PRO 2.0
+ * Frontend controller
+ */
+
+(() => {
+  const tg = window.Telegram?.WebApp;
+
+  if (tg) {
+    tg.ready();
+    tg.expand();
+
+    try {
+      tg.setHeaderColor("#090909");
+      tg.setBackgroundColor("#090909");
+    } catch (_) {
+      // Older Telegram clients may not support these methods.
+    }
+  }
+
+  const navItems = document.querySelectorAll(".nav-item");
+  const pages = document.querySelectorAll(".page");
+  const notificationArea = document.getElementById("notifications");
+
+  function notify(message) {
+    if (!notificationArea) return;
+
+    notificationArea.textContent = message;
+    notificationArea.classList.add("visible");
+
+    window.setTimeout(() => {
+      notificationArea.classList.remove("visible");
+    }, 3000);
+  }
+
+  function openPage(pageName) {
+    const target = document.getElementById(pageName);
+
+    if (!target) return;
+
+    pages.forEach((page) => {
+      page.classList.toggle("active", page.id === pageName);
+    });
+
+    navItems.forEach((item) => {
+      const active = item.dataset.page === pageName;
+      item.classList.toggle("active", active);
+
+      if (active) {
+        item.setAttribute("aria-current", "page");
+      } else {
+        item.removeAttribute("aria-current");
+      }
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  navItems.forEach((item) => {
+    item.addEventListener("click", () => {
+      openPage(item.dataset.page);
+    });
+  });
+
+  // Navigation from elements with data-open-page.
+  document.querySelectorAll("[data-open-page]").forEach((element) => {
+    element.addEventListener("click", () => {
+      openPage(element.dataset.openPage);
+    });
+  });
+
+  // Buttons that are not connected to backend functionality yet
+  // must not pretend that an operation has been completed.
+  document.querySelectorAll("[data-action]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const action = element.dataset.action;
+
+      if (action === "refresh") {
+        notify("Подключение рыночных данных будет добавлено на следующем этапе.");
+      } else {
+        notify("Эта функция пока находится в разработке.");
+      }
+    });
+  });
+
+  // Safe initial state.
+  const initialPage = document.querySelector(".page.active")
+    ? document.querySelector(".page.active").id
+    : "dashboard";
+
+  openPage(initialPage);
+
+  // Expose a small controller for later modules.
+  window.TradingIntelligence = {
+    openPage,
+    notify,
+    telegram: tg || null
+  };
+
+  console.info("Trading Intelligence PRO interface initialized.");
+})();
