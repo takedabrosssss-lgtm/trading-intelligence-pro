@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -11,16 +10,9 @@ from app.signals import generate_signal
 logger = logging.getLogger("trading-worker")
 
 SYMBOLS = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "BNBUSDT",
-    "SOLUSDT",
-    "XRPUSDT",
-    "ADAUSDT",
-    "DOGEUSDT",
-    "AVAXUSDT",
-    "LINKUSDT",
-    "LTCUSDT",
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT",
+    "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
+    "LINKUSDT", "LTCUSDT",
 ]
 
 TIMEFRAMES = ["15m", "1h", "4h"]
@@ -60,9 +52,7 @@ async def scan_market():
             for timeframe in TIMEFRAMES:
                 try:
                     candles = await market_data.get_klines(
-                        symbol,
-                        timeframe,
-                        200,
+                        symbol, timeframe, 200
                     )
 
                     signal = generate_signal(
@@ -72,7 +62,7 @@ async def scan_market():
                         strategy=STRATEGIES[timeframe],
                     )
 
-                    if signal["status"] != "eligible":
+                    if not signal or not signal.get("eligible"):
                         continue
 
                     if already_exists(db, signal):
@@ -85,7 +75,7 @@ async def scan_market():
                         direction=signal["direction"],
                         grade=signal["grade"],
                         score=signal["score"],
-                        confidence=signal["score"],
+                        confidence=None,
                         entry_price=signal["entry_price"],
                         stop_loss=signal["stop_loss"],
                         take_profit=signal["take_profit"],
@@ -110,9 +100,7 @@ async def scan_market():
                 except Exception:
                     db.rollback()
                     logger.exception(
-                        "Scan failed for %s %s",
-                        symbol,
-                        timeframe,
+                        "Scan failed for %s %s", symbol, timeframe
                     )
 
         logger.info("Scan completed. New signals: %s", saved)
@@ -125,7 +113,6 @@ async def scan_market():
 
 async def run_worker():
     init_db()
-
     logger.info("Trading Intelligence scanner started")
 
     while True:
@@ -140,4 +127,3 @@ async def run_worker():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(run_worker())
-    
