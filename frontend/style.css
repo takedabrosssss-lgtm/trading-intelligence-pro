@@ -31,3 +31,267 @@ main{padding:30px 28px}.page{display:none;animation:fade .22s ease}.page.active{
 @media(min-width:800px){main{padding:36px 42px}.market-preview{grid-template-columns:repeat(3,1fr)}.hero-card{padding:28px 30px}.bottom-nav{padding-left:80px;padding-right:80px}}
 @media(max-width:600px){.topbar{height:63px;padding:0 15px}.brand-mark{width:34px;height:34px}.brand-copy b{font-size:9px}.brand-copy small{font-size:7px}.connection{font-size:8px}.top-actions{gap:8px}main{padding:22px 14px}.page-intro{margin-bottom:19px}.hero-card{padding:19px}.hero-balance{font-size:36px}.hero-metrics{gap:7px}.hero-metrics span{font-size:9px}.hero-metrics b{font-size:11px}.market-preview{grid-template-columns:repeat(2,1fr)}.status-grid{grid-template-columns:1fr}.signal-selector{grid-template-columns:1fr 1fr}.signal-selector label{grid-row:auto}.signal-selector select{grid-row:auto}.primary-btn{grid-column:1/-1;grid-row:auto}.analysis-metrics{grid-template-columns:1fr 1fr 1fr}.strategy-grid{gap:8px}.strategy-card{padding:13px}.strategy-card .strategy-balance{font-size:16px}.price-chart{height:220px}.nav-item small{font-size:8px}}
 @media(max-width:360px){.brand-copy b{font-size:8px;letter-spacing:.6px}.live-pill{font-size:7px;padding:7px}.hero-metrics{grid-template-columns:1fr 1fr}.hero-metrics div:last-child{display:none}.market-preview{gap:7px}.mini-market{padding:11px}}
+/* =========================================
+   TRADING INTELLIGENCE PRO
+   PAPER TRADING PORTFOLIO
+   ========================================= */
+
+/* Portfolio statistics */
+.portfolio-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 22px;
+}
+
+.stat-box {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 13px;
+  background: linear-gradient(145deg, #171a1f, #101216);
+}
+
+.stat-box span {
+  display: block;
+  color: #858c97;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.stat-box b {
+  display: block;
+  margin-top: 8px;
+  color: #f0f1f3;
+  font: 700 15px Manrope, sans-serif;
+  overflow-wrap: anywhere;
+}
+
+/* Open positions */
+.positions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0 24px;
+}
+
+.position-card {
+  position: relative;
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 15px;
+  background: linear-gradient(145deg, #191c21, #111317);
+  box-shadow: 0 8px 24px rgba(0,0,0,.14);
+}
+
+.position-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(180deg, #c9a45c, transparent);
+  opacity: .8;
+}
+
+.position-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.position-head b {
+  display: block;
+  color: #f1f2f4;
+  font: 750 15px Manrope, sans-serif;
+}
+
+.position-head small {
+  display: block;
+  margin-top: 5px;
+  color: #858c97;
+  font-size: 10px;
+}
+
+.position-direction {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .8px;
+}
+
+.position-pnl {
+  margin: 19px 0 17px;
+  font: 800 25px Manrope, sans-serif;
+  letter-spacing: -.7px;
+}
+
+.position-pnl small {
+  display: block;
+  margin-top: 4px;
+  color: #858c97;
+  font: 400 10px "DM Sans", sans-serif;
+  letter-spacing: 0;
+}
+
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+
+.position-grid div {
+  min-width: 0;
+}
+
+.position-grid span {
+  display: block;
+  color: #777f8a;
+  font-size: 9px;
+  margin-bottom: 5px;
+}
+
+.position-grid b {
+  display: block;
+  color: #dfe2e7;
+  font: 600 11px "DM Sans", sans-serif;
+  overflow-wrap: anywhere;
+}
+
+/* Account breakdown */
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 12px 0 24px;
+}
+
+.account-row {
+  padding: 15px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 12px;
+  background: #14171b;
+}
+
+.account-row > div:first-child {
+  min-width: 0;
+}
+
+.account-row b {
+  color: #e9eaed;
+  font-size: 12px;
+}
+
+.account-row small {
+  color: #858c97;
+  line-height: 1.5;
+}
+
+.account-values {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.account-values strong {
+  display: block;
+  color: #f0f1f3;
+  font: 700 13px Manrope, sans-serif;
+}
+
+.account-values small {
+  display: block;
+  margin-top: 5px;
+  font-size: 9px;
+}
+
+/* Trade history */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 25px;
+}
+
+.history-row {
+  padding: 13px 15px;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 11px;
+  background: #14171b;
+}
+
+.history-row strong {
+  flex-shrink: 0;
+  font: 700 12px Manrope, sans-serif;
+}
+
+/* P&L colors */
+.positive {
+  color: #36c990 !important;
+}
+
+.negative {
+  color: #ed7077 !important;
+}
+
+/* Section spacing */
+#portfolio .section-title {
+  margin-top: 25px;
+  margin-bottom: 12px;
+}
+
+#portfolio .portfolio-total {
+  margin-bottom: 12px;
+}
+
+/* Mobile optimization */
+@media (max-width: 600px) {
+  .position-card {
+    padding: 14px;
+  }
+
+  .position-pnl {
+    font-size: 23px;
+  }
+
+  .position-grid {
+    gap: 11px 8px;
+  }
+
+  .stat-box {
+    padding: 12px;
+  }
+
+  .stat-box b {
+    font-size: 13px;
+  }
+
+  .account-row {
+    padding: 12px;
+  }
+
+  .account-values strong {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .position-head b {
+    font-size: 13px;
+  }
+
+  .position-pnl {
+    font-size: 21px;
+  }
+
+  .position-grid b {
+    font-size: 10px;
+  }
+}
