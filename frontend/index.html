@@ -25,14 +25,9 @@
       <button class="icon-btn" id="refresh-btn" aria-label="Обновить" title="Обновить">↻</button>
     </div>
   </header>
-
   <main>
     <section class="page active" id="dashboard">
-      <div class="page-intro">
-        <div><div class="eyebrow">PERSONAL TRADING TERMINAL</div><h1>Обзор рынка</h1><p class="subtle">Ваш торговый центр управления</p></div>
-        <span class="live-pill"><i></i> LIVE DATA</span>
-      </div>
-
+      <div class="page-intro"><div><div class="eyebrow">PERSONAL TRADING TERMINAL</div><h1>Обзор рынка</h1><p class="subtle">Ваш торговый центр управления</p></div><span class="live-pill"><i></i> LIVE DATA</span></div>
       <article class="hero-card">
         <div class="hero-top"><span class="overline">ОБЩИЙ ВИРТУАЛЬНЫЙ КАПИТАЛ</span><span class="paper-tag">PAPER TRADING</span></div>
         <div class="hero-balance" id="dashboard-balance">$10,000.00</div>
@@ -42,58 +37,47 @@
           <div><span>Начальный капитал</span><b id="dashboard-initial">$10,000.00</b></div>
           <div><span>Equity</span><b id="dashboard-equity">$10,000.00</b></div>
           <div><span>Счета стратегий</span><b id="dashboard-accounts">4</b></div>
-        </div>
-        <div class="hero-watermark">TI</div>
+        </div><div class="hero-watermark">TI</div>
       </article>
-
       <div class="section-title"><div><span class="eyebrow">MARKET WATCH</span><h2>Рынок сейчас</h2></div><button class="text-btn" data-page="markets">Все рынки <span>↗</span></button></div>
       <div class="market-preview" id="dashboard-markets"><div class="loading-state">Загружаем котировки Binance…</div></div>
-
       <div class="section-title"><div><span class="eyebrow">SYSTEM STATUS</span><h2>Система</h2></div></div>
       <div class="status-grid">
         <div class="status-card"><span class="status-icon">◈</span><div><b>Binance Spot</b><small>Источник рыночных данных</small></div><span class="status-dot" id="market-status-dot"></span></div>
         <div class="status-card"><span class="status-icon">⌁</span><div><b>Paper Trading</b><small>Реальные ордера отключены</small></div><span class="status-dot good"></span></div>
       </div>
     </section>
-
     <section class="page" id="markets">
       <div class="page-intro"><div><div class="eyebrow">BINANCE SPOT</div><h1>Рынки</h1><p class="subtle">Криптовалюты · USDT</p></div><span class="live-pill"><i></i> LIVE</span></div>
       <div class="market-toolbar"><span>АКТИВ</span><span>ЦЕНА / 24Ч</span></div>
       <div class="market-table" id="markets-list"><div class="loading-state">Загружаем котировки…</div></div>
-      <div class="chart-panel">
-        <div class="chart-head"><div><span class="eyebrow">PRICE CHART</span><h2 id="chart-title">BTC / USDT</h2></div>
-          <div class="intervals"><button class="active" data-interval="1h">1H</button><button data-interval="4h">4H</button><button data-interval="1d">1D</button></div>
-        </div>
-        <div id="price-chart" class="price-chart"><div class="loading-state">Выберите актив для графика</div></div>
-        <div class="chart-foot"><span>Источник: Binance Spot</span><span id="chart-updated">—</span></div>
-      </div>
+      <div class="chart-panel"><div class="chart-head"><div><span class="eyebrow">PRICE CHART</span><h2 id="chart-title">BTC / USDT</h2></div><div class="intervals"><button class="active" data-interval="1h">1H</button><button data-interval="4h">4H</button><button data-interval="1d">1D</button></div></div>
+        <div id="price-chart" class="price-chart"><div class="loading-state">Выберите актив для графика</div></div><div class="chart-foot"><span>Источник: Binance Spot</span><span id="chart-updated">—</span></div></div>
     </section>
-
     <section class="page" id="signals">
       <div class="page-intro"><div><div class="eyebrow">TECHNICAL ANALYSIS</div><h1>Сигналы</h1><p class="subtle">Анализ рынка по выбранному активу</p></div><span class="paper-tag">АНАЛИТИКА</span></div>
       <div class="signal-selector"><label for="signal-symbol">Торговая пара</label><select id="signal-symbol"><option>BTCUSDT</option><option>ETHUSDT</option><option>BNBUSDT</option><option>SOLUSDT</option><option>XRPUSDT</option><option>ADAUSDT</option></select><label for="signal-interval">Таймфрейм</label><select id="signal-interval"><option value="15m">15 минут</option><option value="1h" selected>1 час</option><option value="4h">4 часа</option><option value="1d">1 день</option></select><button class="primary-btn" id="run-analysis">Запустить анализ <span>→</span></button></div>
       <div id="analysis-result" class="analysis-placeholder"><div class="placeholder-mark">TI</div><b>Готов к анализу</b><p>Выберите пару и таймфрейм. Результат будет рассчитан по актуальным свечам Binance.</p></div>
       <p class="disclaimer">Оценка технических индикаторов не является вероятностью прибыли или гарантией результата. Это аналитическая информация, не торговая рекомендация.</p>
     </section>
-
     <section class="page" id="strategies">
       <div class="page-intro"><div><div class="eyebrow">CAPITAL ALLOCATION</div><h1>Стратегии</h1><p class="subtle">Распределение виртуального капитала</p></div><span class="paper-tag">4 СЧЁТА</span></div>
       <div class="strategy-summary"><span>Выделено на стратегии</span><b>$10,000.00</b><small>Стартовое распределение · $2,500 на каждый счёт</small></div>
       <div id="strategy-list" class="strategy-grid"><div class="loading-state">Загружаем счета…</div></div>
       <div class="risk-note"><span>◈</span><div><b>Контроль риска</b><p>Целевой лимит риска — до 1.5% на сделку. Максимальная просадка — 10%. Исполнение реальных ордеров отключено.</p></div></div>
     </section>
-
     <section class="page" id="portfolio">
       <div class="page-intro"><div><div class="eyebrow">PAPER ACCOUNT</div><h1>Портфель</h1><p class="subtle">Виртуальные средства и история</p></div><span class="paper-tag">SIMULATED</span></div>
       <article class="portfolio-total"><span>ОБЩИЙ БАЛАНС</span><b id="portfolio-balance">$10,000.00</b><div id="portfolio-pnl" class="positive">+$0.00</div></article>
       <div class="portfolio-stats" id="portfolio-stats"></div>
+      <div class="section-title"><div><span class="eyebrow">OPEN POSITIONS</span><h2>Открытые позиции</h2></div><span class="paper-tag">PAPER</span></div>
+      <div id="positions-list" class="positions-list"><div class="loading-state">Загружаем открытые позиции…</div></div>
       <div class="section-title"><div><span class="eyebrow">ACCOUNT BREAKDOWN</span><h2>Счета стратегий</h2></div></div>
       <div id="portfolio-accounts" class="account-list"><div class="loading-state">Загружаем портфель…</div></div>
       <div class="section-title"><div><span class="eyebrow">RECENT ACTIVITY</span><h2>Последние сделки</h2></div></div>
       <div id="history-list" class="history-list"><div class="loading-state">Загружаем историю…</div></div>
     </section>
   </main>
-
   <nav class="bottom-nav" aria-label="Основная навигация">
     <button class="nav-item active" data-page="dashboard"><span>⌂</span><small>Обзор</small></button>
     <button class="nav-item" data-page="markets"><span>◈</span><small>Рынки</small></button>

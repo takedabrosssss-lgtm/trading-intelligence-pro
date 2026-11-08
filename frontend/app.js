@@ -4,7 +4,7 @@
   const initData = tg?.initData || "";
   const API = "/api";
   const symbols = ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT"];
-  const names = {BTCUSDT:"Bitcoin",ETHUSDT:"Ethereum",BNBUSDT:"BNB",SOLUSDT:"Solana",XRPUSDT:"XRP",ADAUSDT:"Cardano"};
+  const names = {BTCUSDT:"Bitcoin",ETHUSDT:"Ethereum",BNBUSDT:"BNB",SOLUSDT:"Solana",XRPUSDT:"XRP",ADAUSDT:"Cardano",DOGEUSDT:"Dogecoin",AVAXUSDT:"Avalanche"};
   const state = {portfolio:null,prices:{},selectedSymbol:"BTCUSDT",interval:"1h",chart:null,candleSeries:null,toastTimer:null};
   const $ = (s,r=document) => r.querySelector(s);
   const $$ = (s,r=document) => [...r.querySelectorAll(s)];
@@ -17,7 +17,11 @@
   }
   function compact(v) {
     const n=Number(v); if(!Number.isFinite(n)) return "—";
-    return n.toLocaleString("en-US",{maximumFractionDigits:2});
+    return n.toLocaleString("en-US",{maximumFractionDigits:6});
+  }
+  function price(v) {
+    const n=Number(v); if(!Number.isFinite(n)) return "—";
+    return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:n<1?6:2});
   }
   function safe(v) { return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
   function toast(message) {
@@ -82,12 +86,37 @@
     $("#portfolio-pnl").textContent=pnlText;
     $("#portfolio-pnl").className=pnl>=0?"positive":"negative";
     $("#portfolio-stats").innerHTML=[
-      ["Начальный капитал",money(initial)],["Equity",money(equity)],["Общий P&L",pnlText],["Счетов",String((data.accounts||[]).length)]
+      ["Начальный капитал",money(initial)],["Equity",money(equity)],["Плавающий P&L",`${Number(data.unrealized_pnl)>=0?"+":""}${money(data.unrealized_pnl||0)}`],["Общий P&L",pnlText],["Счетов",String((data.accounts||[]).length)]
     ].map(([label,value])=>`<div class="stat-box"><span>${label}</span><b>${value}</b></div>`).join("");
     const accounts=data.accounts||[];
-    const cards=accounts.map((a,i)=>`<article class="strategy-card"><div class="strategy-card-head"><h3>${safe(a.name)}</h3><span class="strategy-symbol">${["⌁","◷","◇","▤"][i%4]}</span></div><div class="strategy-balance">${money(a.balance)}</div><small>${safe(a.strategy)} · ${Number(a.open_positions)||0} открытых позиций</small></article>`).join("");
+    const cards=accounts.map((a,i)=>`<article class="strategy-card"><div class="strategy-card-head"><h3>${safe(a.name)}</h3><span class="strategy-symbol">${["⌁","◷","◇","▤"][i%4]}</span></div><div class="strategy-balance">${money(a.equity)}</div><small>Баланс ${money(a.balance)} · ${Number(a.open_positions)||0} открытых позиций</small><small class="${Number(a.total_pnl)>=0?"positive":"negative"}">P&amp;L ${Number(a.total_pnl)>=0?"+":""}${money(a.total_pnl)}</small></article>`).join("");
     $("#strategy-list").innerHTML=cards||'<div class="empty-message">Счета стратегий не найдены</div>';
-    $("#portfolio-accounts").innerHTML=accounts.map(a=>`<div class="account-row"><div><b>${safe(a.name)}</b><small>${safe(a.strategy)} · ${Number(a.open_positions)||0} позиций</small></div><strong>${money(a.balance)}</strong></div>`).join("")||'<div class="empty-message">Нет счетов</div>';
+    $("#portfolio-accounts").innerHTML=accounts.map(a=>`<div class="account-row"><div><b>${safe(a.name)}</b><small>${safe(a.strategy)} · ${Number(a.open_positions)||0} позиций</small></div><div class="account-values"><strong>${money(a.equity)}</strong><small>Баланс ${money(a.balance)} · P&amp;L <span class="${Number(a.total_pnl)>=0?"positive":"negative"}">${Number(a.total_pnl)>=0?"+":""}${money(a.total_pnl)}</span></small></div></div>`).join("")||'<div class="empty-message">Нет счетов</div>';
+    renderPositions(data.positions||[]);
+  }
+  function renderPositions(positions) {
+    const host=$("#positions-list");
+    if(!host) return;
+    if(!positions.length) {
+      host.innerHTML='<div class="empty-message">Открытых виртуальных позиций пока нет</div>';
+      return;
+    }
+    host.innerHTML=positions.map(p=>{
+      const pnl=Number(p.unrealized_pnl)||0,up=pnl>=0;
+      const direction=p.direction==="BUY"?"LONG":"SHORT";
+      return `<article class="position-card">
+        <div class="position-head"><div><b>${safe(p.symbol.replace("USDT",""))} / USDT</b><small>${safe(p.account)} · ${safe(p.strategy)}</small></div><span class="position-direction ${p.direction==="BUY"?"positive":"negative"}">${direction}</span></div>
+        <div class="position-pnl ${up?"positive":"negative"}">${up?"+":""}${money(pnl)}<small>Плавающий P&amp;L</small></div>
+        <div class="position-grid">
+          <div><span>Вход</span><b>${price(p.entry_price)}</b></div>
+          <div><span>Текущая цена</span><b>${price(p.current_price)}</b></div>
+          <div><span>Stop Loss</span><b>${price(p.stop_loss)}</b></div>
+          <div><span>Take Profit</span><b>${price(p.take_profit)}</b></div>
+          <div><span>Количество</span><b>${compact(p.quantity)}</b></div>
+          <div><span>Объём</span><b>${money(Number(p.entry_price)*Number(p.quantity))}</b></div>
+        </div>
+      </article>`;
+    }).join("");
   }
   async function loadPortfolio() {
     try { const data=await api("/portfolio"); renderPortfolio(data); }
