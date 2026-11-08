@@ -1,12 +1,14 @@
+
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from html import escape
 
 from aiogram import Bot
+from sqlalchemy import text
 
 from app.config import settings
-from app.database import SessionLocal, Signal, init_db
+from app.database import SessionLocal, Signal, init_db, engine
 from app.market_data import market_data
 from app.signals import generate_signal
 
@@ -29,6 +31,17 @@ STRATEGIES = {
 DUPLICATE_WINDOW_MINUTES = 60
 
 
+def ensure_database_schema():
+    """Add missing columns to existing database tables."""
+    with engine.begin() as connection:
+        connection.execute(text(
+            "ALTER TABLE signals ADD COLUMN IF NOT EXISTS market "
+            "VARCHAR(30) DEFAULT 'crypto'"
+        ))
+
+    logger.info("Database schema checked")
+
+
 def already_exists(db, signal):
     cutoff = datetime.now(timezone.utc) - timedelta(
         minutes=DUPLICATE_WINDOW_MINUTES
@@ -49,6 +62,7 @@ def already_exists(db, signal):
 def format_signal_message(signal):
     direction = "ПОКУПКА" if signal.direction == "BUY" else "ПРОДАЖА"
     emoji = "🟢" if signal.direction == "BUY" else "🔴"
+
     strategy_names = {
         "scalping": "Scalping",
         "intraday": "Intraday",
@@ -130,15 +144,18 @@ async def deliver_pending_signals():
                         parse_mode="HTML",
                         disable_web_page_preview=True,
                     )
+
                     signal.status = "sent"
                     db.commit()
                     delivered += 1
+
                     logger.info(
                         "Telegram signal delivered: id=%s %s %s",
                         signal.id,
                         signal.symbol,
                         signal.timeframe,
                     )
+
                 except Exception:
                     db.rollback()
                     logger.exception(
@@ -222,6 +239,8 @@ async def scan_market():
 
 async def run_worker():
     init_db()
+    ensure_database_schema()
+
     logger.info(
         "Trading Intelligence scanner started; interval=%ss",
         settings.scan_interval_seconds,
@@ -231,8 +250,10 @@ async def run_worker():
         try:
             await scan_market()
             await deliver_pending_signals()
+
         except asyncio.CancelledError:
             raise
+
         except Exception:
             logger.exception("Scanner cycle failed")
 
@@ -242,3 +263,4 @@ async def run_worker():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(run_worker())
+    
