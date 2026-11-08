@@ -1,3 +1,4 @@
+
 import asyncio
 import hashlib
 import hmac
@@ -286,6 +287,10 @@ async def history(
                     "strategy": trade.strategy,
                     "net_pnl": trade.net_pnl,
                     "exit_reason": trade.exit_reason,
+                    "closed_at": (
+                        trade.closed_at.isoformat()
+                        if trade.closed_at else None
+                    ),
                 }
                 for trade in trades
             ]
@@ -306,4 +311,5 @@ app.mount(
     "/",
     StaticFiles(directory=str(FRONTEND_DIR), html=True),
     name="frontend",
-)
+        )
+            
