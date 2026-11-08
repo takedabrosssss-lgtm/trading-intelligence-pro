@@ -1,80 +1,84 @@
 
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 
 
+def parse_user_ids(value: str) -> set[str]:
+    return {
+        item.strip()
+        for item in value.split(",")
+        if item.strip()
+    }
+
+
+@dataclass(frozen=True)
 class Settings:
-    APP_NAME = "Trading Intelligence PRO"
-    APP_VERSION = "2.0.0"
-    ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+    environment: str
+    bot_token: str
+    telegram_webhook_secret: str
+    webhook_url: str
+    mini_app_url: str
+    owner_telegram_id: str
+    allowed_telegram_ids: str
+    database_url: str
+    secret_key: str
+    host: str
+    port: int
 
-    # Telegram
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
-    MINI_APP_URL = os.getenv("MINI_APP_URL", "")
+    initial_capital: float
+    strategy_capital: float
+    max_risk_per_trade: float
+    max_drawdown: float
 
-    # Personal access control
-    OWNER_TELEGRAM_ID = os.getenv("OWNER_TELEGRAM_ID", "")
-    ALLOWED_TELEGRAM_IDS = os.getenv("ALLOWED_TELEGRAM_IDS", "")
+    binance_base_url: str
+    bybit_base_url: str
 
-    # Database
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./trading_intelligence.db")
-
-    # Server
-    HOST = os.getenv("HOST", "0.0.0.0")
-    PORT = int(os.getenv("PORT", "8000"))
-
-    # Paper trading
-    INITIAL_CAPITAL = float(os.getenv("INITIAL_CAPITAL", "10000"))
-    STRATEGY_CAPITAL = float(os.getenv("STRATEGY_CAPITAL", "2500"))
-    MAX_RISK_PER_TRADE = float(os.getenv("MAX_RISK_PER_TRADE", "0.015"))
-    MAX_DRAWDOWN = float(os.getenv("MAX_DRAWDOWN", "0.10"))
-
-    # Market data providers
-    BINANCE_BASE_URL = os.getenv(
-        "BINANCE_BASE_URL",
-        "https://api.binance.com"
-    )
-    BYBIT_BASE_URL = os.getenv(
-        "BYBIT_BASE_URL",
-        "https://api.bybit.com"
-    )
-
-    # Scanner
-    SCAN_INTERVAL_SECONDS = int(
-        os.getenv("SCAN_INTERVAL_SECONDS", "300")
-    )
-    MARKET_DATA_TIMEOUT = float(
-        os.getenv("MARKET_DATA_TIMEOUT", "12")
-    )
-
-    # Security
-    SECRET_KEY = os.getenv("SECRET_KEY", "")
+    scan_interval_seconds: int
+    request_timeout_seconds: int
 
     @property
-    def telegram_token(self):
-        return self.BOT_TOKEN or self.TELEGRAM_BOT_TOKEN
+    def telegram_token(self) -> str:
+        return self.bot_token
 
     @property
-    def allowed_user_ids(self):
-        values = set()
+    def allowed_user_ids(self) -> set[str]:
+        ids = parse_user_ids(self.allowed_telegram_ids)
 
-        if self.OWNER_TELEGRAM_ID.strip():
-            values.add(self.OWNER_TELEGRAM_ID.strip())
+        if self.owner_telegram_id:
+            ids.add(self.owner_telegram_id)
 
-        for value in self.ALLOWED_TELEGRAM_IDS.split(","):
-            value = value.strip()
-            if value:
-                values.add(value)
-
-        return values
+        return ids
 
 
 @lru_cache
-def get_settings():
-    return Settings()
+def get_settings() -> Settings:
+    return Settings(
+        environment=os.getenv("ENVIRONMENT", "production"),
+        bot_token=os.getenv(
+            "BOT_TOKEN",
+            os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        ),
+        telegram_webhook_secret=os.getenv(
+            "TELEGRAM_WEBHOOK_SECRET", ""
+        ),
+        webhook_url=os.getenv("WEBHOOK_URL", ""),
+        mini_app_url=os.getenv("MINI_APP_URL", ""),
+        owner_telegram_id=os.getenv("OWNER_TELEGRAM_ID", ""),
+        allowed_telegram_ids=os.getenv("ALLOWED_TELEGRAM_IDS", ""),
+        database_url=os.getenv("DATABASE_URL", "sqlite:///./trading_intelligence.db"),
+        secret_key=os.getenv("SECRET_KEY", ""),
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        initial_capital=10000.0,
+        strategy_capital=2500.0,
+        max_risk_per_trade=0.015,
+        max_drawdown=0.10,
+        binance_base_url="https://data-api.binance.vision",
+        bybit_base_url="https://api.bybit.com",
+        scan_interval_seconds=300,
+        request_timeout_seconds=15,
+    )
 
 
 settings = get_settings()
