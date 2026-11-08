@@ -1,87 +1,349 @@
-from statistics import mean
-from app.config import get_settings
 
-def ema(values, period):
-    if len(values) < period: return []
-    k = 2 / (period + 1)
-    out = [mean(values[:period])]
-    for v in values[period:]:
-        out.append(v*k + out[-1]*(1-k))
-    return [None]*(period-1) + out
+import math
+from typing import Optional
 
-def atr(candles, period=14):
-    trs = []
-    for i, c in enumerate(candles):
-        if i == 0: trs.append(c["high"]-c["low"])
+
+def ema(values: list[float], period: int) -> list[Optional[float]]:
+    if period <= 0:
+        raise ValueError("Period must be positive")
+
+    result = [None] * len(values)
+
+    if len(values) < period:
+        return result
+
+    current = sum(values[:period]) / period
+    result[period - 1] = current
+
+    multiplier = 2 / (period + 1)
+
+    for i in range(period, len(values)):
+        current = (
+            values[i] * multiplier
+            + current * (1 - multiplier)
+        )
+        result[i] = current
+
+    return result
+
+
+def sma(values: list[float], period: int) -> list[Optional[float]]:
+    result = [None] * len(values)
+
+    if period <= 0:
+        raise ValueError("Period must be positive")
+
+    for i in range(period - 1, len(values)):
+        result[i] = sum(
+            values[i - period + 1:i + 1]
+        ) / period
+
+    return result
+
+
+def rsi(values: list[float], period: int = 14) -> list[Optional[float]]:
+    result = [None] * len(values)
+
+    if period <= 0 or len(values) <= period:
+        return result
+
+    gains = []
+    losses = []
+
+    for i in range(1, len(values)):
+        change = values[i] - values[i - 1]
+        gains.append(max(change, 0))
+        losses.append(max(-change, 0))
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    def calculate(gain, loss):
+        if loss == 0:
+            return 100.0 if gain > 0 else 50.0
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+
+    result[period] = calculate(avg_gain, avg_loss)
+
+    for i in range(period + 1, len(values)):
+        gain = gains[i - 1]
+        loss = losses[i - 1]
+
+        avg_gain = (
+            avg_gain * (period - 1) + gain
+        ) / period
+
+        avg_loss = (
+            avg_loss * (period - 1) + loss
+        ) / period
+
+        result[i] = calculate(avg_gain, avg_loss)
+
+    return result
+
+
+def macd(
+    values: list[float],
+    fast: int = 12,
+    slow: int = 26,
+    signal_period: int = 9,
+) -> dict:
+    fast_values = ema(values, fast)
+    slow_values = ema(values, slow)
+
+    macd_line = [None] * len(values)
+
+    for i in range(len(values)):
+        if fast_values[i] is not None and slow_values[i] is not None:
+            macd_line[i] = fast_values[i] - slow_values[i]
+
+    valid_start = next(
+        (i for i, value in enumerate(macd_line) if value is not None),
+        len(values)
+    )
+
+    valid_macd = macd_line[valid_start:]
+    signal_valid = ema(valid_macd, signal_period)
+
+    signal_line = [None] * len(values)
+    histogram = [None] * len(values)
+
+    for offset, value in enumerate(signal_valid):
+        index = valid_start + offset
+        signal_line[index] = value
+
+        if value is not None:
+            histogram[index] = macd_line[index] - value
+
+    return {
+        "macd": macd_line,
+        "signal": signal_line,
+        "histogram": histogram,
+    }
+
+
+def bollinger_bands(
+    values: list[float],
+    period: int = 20,
+    deviations: float = 2.0,
+) -> dict:
+    middle = sma(values, period)
+    upper = [None] * len(values)
+    lower = [None] * len(values)
+
+    for i in range(period - 1, len(values)):
+        window = values[i - period + 1:i + 1]
+        mean = middle[i]
+
+        variance = sum(
+            (value - mean) ** 2 for value in window
+        ) / period
+
+        standard_deviation = math.sqrt(variance)
+
+        upper[i] = mean + deviations * standard_deviation
+        lower[i] = mean - deviations * standard_deviation
+
+    return {
+        "upper": upper,
+        "middle": middle,
+        "lower": lower,
+    }
+
+
+def atr(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    period: int = 14,
+) -> list[Optional[float]]:
+    length = min(len(highs), len(lows), len(closes))
+    result = [None] * length
+
+    if period <= 0 or length <= period:
+        return result
+
+    true_ranges = []
+
+    for i in range(length):
+        if i == 0:
+            tr = highs[i] - lows[i]
         else:
-            p = candles[i-1]["close"]
-            trs.append(max(c["high"]-c["low"], abs(c["high"]-p), abs(c["low"]-p)))
-    return mean(trs[-period:]) if len(trs) >= period else None
+            tr = max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i] - closes[i - 1]),
+            )
 
-def build_setup(candles, symbol, timeframe="1h"):
-    """Deterministic baseline strategy: EMA trend + breakout/momentum + ATR risk.
-    It is a transparent starter model, not an institutional SMC/AI prediction engine.
+        true_ranges.append(tr)
+
+    current = sum(true_ranges[:period]) / period
+    result[period - 1] = current
+
+    for i in range(period, length):
+        current = (
+            current * (period - 1) + true_ranges[i]
+        ) / period
+
+        result[i] = current
+
+    return result
+
+
+def analyze_market(candles: list[dict]) -> dict:
     """
-    if len(candles) < 80: return None
-    closes = [x["close"] for x in candles]
-    e20, e50 = ema(closes,20), ema(closes,50)
-    last, prev = candles[-1], candles[-2]
-    vol = atr(candles)
-    if not vol or vol <= 0: return None
-    recent_high = max(x["high"] for x in candles[-21:-1])
-    recent_low = min(x["low"] for x in candles[-21:-1])
-    long = closes[-1] > e20[-1] > e50[-1] and closes[-1] > recent_high
-    short = closes[-1] < e20[-1] < e50[-1] and closes[-1] < recent_low
-    if not (long or short): return None
-    direction = "LONG" if long else "SHORT"
-    entry = last["close"]
-    if long:
-        sl = min(min(x["low"] for x in candles[-8:]), entry - 1.5*vol)
-        risk = entry - sl
-        if risk <= 0: return None
-        tp1, tp2 = entry + risk, entry + 2*risk
+    Analyze OHLCV candles.
+    Confidence is a technical confluence score, not a win probability.
+    """
+
+    if len(candles) < 50:
+        return {
+            "status": "insufficient_data",
+            "message": "At least 50 candles are required.",
+        }
+
+    try:
+        closes = [float(c["close"]) for c in candles]
+        highs = [float(c["high"]) for c in candles]
+        lows = [float(c["low"]) for c in candles]
+        volumes = [float(c.get("volume", 0)) for c in candles]
+
+        if not all(
+            math.isfinite(value)
+            for value in closes + highs + lows + volumes
+        ):
+            raise ValueError("Non-finite market data")
+
+        if any(value <= 0 for value in closes):
+            raise ValueError("Invalid closing price")
+
+        if any(h < l for h, l in zip(highs, lows)):
+            raise ValueError("Invalid candle range")
+
+    except (KeyError, TypeError, ValueError) as exc:
+        return {
+            "status": "invalid_data",
+            "message": str(exc),
+        }
+
+    ema20 = ema(closes, 20)
+    ema50 = ema(closes, 50)
+    rsi_values = rsi(closes)
+    macd_values = macd(closes)
+    bands = bollinger_bands(closes)
+    atr_values = atr(highs, lows, closes)
+
+    last = -1
+    price = closes[last]
+
+    values = {
+        "ema20": ema20[last],
+        "ema50": ema50[last],
+        "rsi": rsi_values[last],
+        "macd": macd_values["macd"][last],
+        "macd_signal": macd_values["signal"][last],
+        "macd_histogram": macd_values["histogram"][last],
+        "bb_upper": bands["upper"][last],
+        "bb_middle": bands["middle"][last],
+        "bb_lower": bands["lower"][last],
+        "atr": atr_values[last],
+    }
+
+    if any(value is None for value in values.values()):
+        return {
+            "status": "insufficient_data",
+            "message": "Indicators could not be calculated.",
+        }
+
+    bullish = 0
+    bearish = 0
+    reasons = []
+
+    if price > values["ema20"] > values["ema50"]:
+        bullish += 2
+        reasons.append("Price is above EMA20 and EMA50")
+    elif price < values["ema20"] < values["ema50"]:
+        bearish += 2
+        reasons.append("Price is below EMA20 and EMA50")
+
+    if values["rsi"] >= 55:
+        bullish += 1
+        reasons.append("RSI shows bullish momentum")
+    elif values["rsi"] <= 45:
+        bearish += 1
+        reasons.append("RSI shows bearish momentum")
+
+    if values["macd_histogram"] > 0:
+        bullish += 1
+        reasons.append("MACD histogram is positive")
+    elif values["macd_histogram"] < 0:
+        bearish += 1
+        reasons.append("MACD histogram is negative")
+
+    if price > values["bb_middle"]:
+        bullish += 1
+    elif price < values["bb_middle"]:
+        bearish += 1
+
+    if bullish > bearish:
+        direction = "BUY"
+    elif bearish > bullish:
+        direction = "SELL"
     else:
-        sl = max(max(x["high"] for x in candles[-8:]), entry + 1.5*vol)
-        risk = sl - entry
-        if risk <= 0: return None
-        tp1, tp2 = entry - risk, entry - 2*risk
-    score = min(100, 50 + 25*abs(closes[-1]-e20[-1])/vol + 10*abs(e20[-1]-e50[-1])/vol)
-    return {"symbol":symbol, "direction":direction, "timeframe":timeframe, "entry":entry,
-            "sl":sl, "tp1":tp1, "tp2":tp2, "score":round(score,1),
-            "notes":"EMA20/EMA50 trend alignment + 20-bar breakout; ATR/structure-based risk."}
+        direction = "NEUTRAL"
 
-def backtest(candles, symbol, timeframe="1h", min_trades=30):
-    wins = losses = 0
-    outcomes = []
-    start = max(80, len(candles)//3)
-    for i in range(start, len(candles)-1):
-        setup = build_setup(candles[:i+1], symbol, timeframe)
-        if not setup: continue
-        side, sl, tp = setup["direction"], setup["sl"], setup["tp1"]
-        outcome = None
-        for bar in candles[i+1:min(i+1+48, len(candles))]:
-            if side == "LONG":
-                hit_sl, hit_tp = bar["low"] <= sl, bar["high"] >= tp
-            else:
-                hit_sl, hit_tp = bar["high"] >= sl, bar["low"] <= tp
-            if hit_sl: outcome = "LOSS"; break
-            if hit_tp: outcome = "WIN"; break
-        if outcome:
-            outcomes.append(outcome)
-            wins += outcome == "WIN"
-            losses += outcome == "LOSS"
-    n = wins + losses
-    return {"winrate": round(100*wins/n,2) if n else 0.0, "trades":n, "wins":wins, "losses":losses,
-            "sufficient": n >= min_trades}
+    total_score = max(bullish, bearish)
+    confidence = round(total_score / 5 * 100, 1)
 
-def analyze(candles, symbol, timeframe="1h"):
-    setup = build_setup(candles, symbol, timeframe)
-    if not setup: return {"symbol":symbol, "signal":None, "reason":"No qualifying setup."}
-    bt = backtest(candles, symbol, timeframe, get_settings().min_backtest_trades)
-    setup.update({"historical_winrate":bt["winrate"], "sample_size":bt["trades"], "backtest":bt})
-    threshold = get_settings().signal_min_winrate
-    if not bt["sufficient"]:
-        return {"symbol":symbol, "signal":None, "reason":f"Insufficient backtest sample ({bt['trades']} trades).", "setup":setup}
-    if bt["winrate"] < threshold:
-        return {"symbol":symbol, "signal":None, "reason":f"Historical winrate {bt['winrate']}% below threshold {threshold}%.", "setup":setup}
-    return {"symbol":symbol, "signal":setup, "reason":"Passed historical filter."}
+    if direction == "NEUTRAL":
+        grade = "C"
+    elif confidence >= 80:
+        grade = "S"
+    elif confidence >= 60:
+        grade = "A"
+    elif confidence >= 40:
+        grade = "B"
+    else:
+        grade = "C"
+
+    volume_average = (
+        sum(volumes[-20:]) / min(20, len(volumes))
+        if volumes else 0
+    )
+
+    volume_ratio = (
+        volumes[-1] / volume_average
+        if volume_average > 0 else None
+    )
+
+    return {
+        "status": "ok",
+        "direction": direction,
+        "grade": grade,
+        "confidence_score": confidence,
+        "confidence_description": (
+            "Technical confluence score; not a probability of profit."
+        ),
+        "price": price,
+        "indicators": {
+            "ema20": round(values["ema20"], 8),
+            "ema50": round(values["ema50"], 8),
+            "rsi14": round(values["rsi"], 2),
+            "macd": round(values["macd"], 8),
+            "macd_signal": round(values["macd_signal"], 8),
+            "macd_histogram": round(
+                values["macd_histogram"], 8
+            ),
+            "bollinger_upper": round(values["bb_upper"], 8),
+            "bollinger_middle": round(values["bb_middle"], 8),
+            "bollinger_lower": round(values["bb_lower"], 8),
+            "atr14": round(values["atr"], 8),
+            "volume_ratio": (
+                round(volume_ratio, 2)
+                if volume_ratio is not None else None
+            ),
+        },
+        "reasons": reasons,
+            }
+    
