@@ -1,7 +1,34 @@
-
 from typing import Any
 
 from app.analyzer import analyze_market
+
+# Directional confidence threshold. SELL scores are inverted because the
+# analyzer's raw score is a bullish/bearish scale (0..100), not confidence.
+MIN_SIGNAL_STRENGTH = 80
+ALLOWED_GRADES = {"S", "A"}
+
+
+def signal_strength(direction: str, raw_score: float) -> float:
+    score = float(raw_score)
+    return score if direction == "BUY" else 100.0 - score
+
+
+def is_quality_signal_values(
+    direction: str | None,
+    score: float | int | None,
+    grade: str | None,
+) -> bool:
+    if direction not in {"BUY", "SELL"} or score is None:
+        return False
+    if (grade or "").upper() not in ALLOWED_GRADES:
+        return False
+
+    try:
+        strength = signal_strength(direction, float(score))
+    except (TypeError, ValueError):
+        return False
+
+    return strength >= MIN_SIGNAL_STRENGTH
 
 
 def generate_signal(
@@ -26,15 +53,7 @@ def generate_signal(
     if atr is None or atr <= 0 or entry <= 0:
         return None
 
-    eligible = (
-        direction == "BUY"
-        and score >= 70
-        and grade in {"S", "A"}
-    ) or (
-        direction == "SELL"
-        and score <= 30
-        and grade in {"S", "A"}
-    )
+    eligible = is_quality_signal_values(direction, score, grade)
 
     risk_distance = atr * 1.5
 
@@ -62,7 +81,7 @@ def generate_signal(
         "direction": direction,
         "grade": grade,
         "score": score,
-        "confidence": None,
+        "confidence": signal_strength(direction, score),
         "entry_price": entry,
         "stop_loss": stop_loss,
         "take_profit": take_profit,
@@ -80,10 +99,11 @@ def is_eligible_for_auto_paper_trade(
     if not signal or signal.get("status") != "new":
         return False
 
-    if signal.get("grade") not in {"S", "A"}:
-        return False
-
-    if signal.get("direction") not in {"BUY", "SELL"}:
+    if not is_quality_signal_values(
+        signal.get("direction"),
+        signal.get("score"),
+        signal.get("grade"),
+    ):
         return False
 
     entry = signal.get("entry_price")
@@ -117,4 +137,3 @@ def is_duplicate_signal(
             return True
 
     return False
-    

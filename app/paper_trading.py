@@ -4,10 +4,10 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.database import PaperAccount, Position, SessionLocal, Signal, Trade
 from app.market_data import market_data
+from app.signals import is_quality_signal_values
 
 logger = logging.getLogger("paper-trading")
 
-# Simulation assumptions only. No exchange orders are ever submitted.
 FEE_RATE = 0.001  # 0.10% per side
 MAX_OPEN_POSITIONS_PER_ACCOUNT = 3
 
@@ -49,12 +49,11 @@ def _close_position(db, position, exit_price, reason):
     entry = float(position.entry_price)
     quantity = float(position.quantity)
     exit_price = float(exit_price)
-
-    if position.direction == "BUY":
-        gross = (exit_price - entry) * quantity
-    else:
-        gross = (entry - exit_price) * quantity
-
+    gross = (
+        (exit_price - entry) * quantity
+        if position.direction == "BUY"
+        else (entry - exit_price) * quantity
+    )
     fees = (entry * quantity + exit_price * quantity) * FEE_RATE
     net = gross - fees
 
@@ -92,7 +91,6 @@ async def update_open_positions():
     updated = 0
     try:
         positions = db.query(Position).filter(Position.status == "open").all()
-
         for position in positions:
             try:
                 quote = await market_data.get_price(position.symbol)
@@ -106,44 +104,23 @@ async def update_open_positions():
 
                 if position.direction == "BUY":
                     gross = (price - entry) * quantity
-                    stop_hit = (
-                        position.stop_loss is not None
-                        and price <= float(position.stop_loss)
-                    )
-                    target_hit = (
-                        position.take_profit is not None
-                        and price >= float(position.take_profit)
-                    )
+                    stop_hit = position.stop_loss is not None and price <= float(position.stop_loss)
+                    target_hit = position.take_profit is not None and price >= float(position.take_profit)
                 else:
                     gross = (entry - price) * quantity
-                    stop_hit = (
-                        position.stop_loss is not None
-                        and price >= float(position.stop_loss)
-                    )
-                    target_hit = (
-                        position.take_profit is not None
-                        and price <= float(position.take_profit)
-                    )
+                    stop_hit = position.stop_loss is not None and price >= float(position.stop_loss)
+                    target_hit = position.take_profit is not None and price <= float(position.take_profit)
 
                 estimated_fees = (entry * quantity + price * quantity) * FEE_RATE
                 position.unrealized_pnl = gross - estimated_fees
 
-                # If a quote is already beyond an exit level, simulate execution
-                # at the configured stop/target level, not at a better price.
                 if stop_hit:
-                    _close_position(
-                        db, position, float(position.stop_loss), "stop_loss"
-                    )
+                    _close_position(db, position, float(position.stop_loss), "stop_loss")
                 elif target_hit:
-                    _close_position(
-                        db, position, float(position.take_profit), "take_profit"
-                    )
-
+                    _close_position(db, position, float(position.take_profit), "take_profit")
                 updated += 1
             except Exception:
-                logger.exception(
-                    "Could not update paper position %s", position.id
-                )
+                logger.exception("Could not update paper position %s", position.id)
 
         db.commit()
     except Exception:
@@ -151,7 +128,6 @@ async def update_open_positions():
         logger.exception("Paper position update failed")
     finally:
         db.close()
-
     return updated
 
 
@@ -169,14 +145,23 @@ async def open_paper_positions():
 
         for signal in signals:
             try:
+                # Hard server-side quality gate. This protects against legacy
+                # rows and signals inserted before the stricter scanner filter.
+                if not is_quality_signal_values(
+                    signal.direction, signal.score, signal.grade
+                ):
+                    signal.status = "paper_skipped"
+                    logger.info(
+                        "Rejected low-quality paper signal id=%s score=%s grade=%s",
+                        signal.id, signal.score, signal.grade,
+                    )
+                    continue
+
                 existing = db.query(Position).filter(
                     Position.signal_id == signal.id
                 ).first()
                 if existing:
-                    signal.status = (
-                        "paper_opened" if existing.status == "open"
-                        else "paper_closed"
-                    )
+                    signal.status = "paper_opened" if existing.status == "open" else "paper_closed"
                     continue
 
                 created_at = _as_utc(signal.created_at)
@@ -197,9 +182,7 @@ async def open_paper_positions():
 
                 if account is None:
                     signal.status = "paper_skipped"
-                    logger.warning(
-                        "No active paper account for strategy %s", strategy
-                    )
+                    logger.warning("No active paper account for strategy %s", strategy)
                     continue
 
                 signal_entry = float(signal.entry_price or 0)
@@ -232,18 +215,11 @@ async def open_paper_positions():
                     continue
 
                 equity = _account_equity(db, account)
-                max_drawdown = float(
-                    account.max_drawdown or settings.max_drawdown
-                )
-                drawdown_floor = float(account.initial_balance or 0) * (
-                    1 - max_drawdown
-                )
+                max_drawdown = float(account.max_drawdown or settings.max_drawdown)
+                drawdown_floor = float(account.initial_balance or 0) * (1 - max_drawdown)
 
                 if equity <= drawdown_floor or equity <= 0:
-                    logger.warning(
-                        "Paper account %s paused by drawdown guard",
-                        account.name,
-                    )
+                    logger.warning("Paper account %s paused by drawdown guard", account.name)
                     continue
 
                 quote = await market_data.get_price(signal.symbol)
@@ -251,13 +227,9 @@ async def open_paper_positions():
                 if live_entry <= 0:
                     continue
 
-                # Do not chase a signal if price has moved too far from its entry.
                 if abs(live_entry - signal_entry) > abs(signal_entry - stop) * 0.5:
                     signal.status = "paper_skipped"
-                    logger.info(
-                        "Skipped paper signal %s due to entry price drift",
-                        signal.id,
-                    )
+                    logger.info("Skipped paper signal %s due to entry price drift", signal.id)
                     continue
 
                 if signal.direction == "BUY":
@@ -293,9 +265,7 @@ async def open_paper_positions():
                     stop_loss=stop,
                     take_profit=target,
                     quantity=quantity,
-                    unrealized_pnl=(
-                        -2 * live_entry * quantity * FEE_RATE
-                    ),
+                    unrealized_pnl=-2 * live_entry * quantity * FEE_RATE,
                     status="open",
                 )
                 db.add(position)
@@ -305,15 +275,13 @@ async def open_paper_positions():
 
                 logger.info(
                     "Paper position opened: signal=%s position=%s %s %s "
-                    "qty=%.8f entry=%.8f risk_budget=%.2f",
+                    "qty=%.8f entry=%.8f risk_budget=%.2f score=%s grade=%s",
                     signal.id, position.id, signal.symbol, signal.direction,
-                    quantity, live_entry, risk_budget,
+                    quantity, live_entry, risk_budget, signal.score, signal.grade,
                 )
 
             except Exception:
-                logger.exception(
-                    "Could not open paper position for signal %s", signal.id
-                )
+                logger.exception("Could not open paper position for signal %s", signal.id)
 
         db.commit()
     except Exception:
@@ -321,7 +289,6 @@ async def open_paper_positions():
         logger.exception("Paper position opening failed")
     finally:
         db.close()
-
     return opened
 
 

@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import SessionLocal, Signal, init_db, engine
 from app.instance_lock import acquire_advisory_lock, release_advisory_lock
 from app.market_data import market_data
-from app.signals import generate_signal
+from app.signals import generate_signal, is_quality_signal_values, signal_strength
 from app.paper_trading import run_paper_trading_cycle
 
 logger = logging.getLogger("trading-worker")
@@ -46,9 +46,7 @@ def ensure_database_schema():
         "ALTER TABLE signals ALTER COLUMN notes DROP NOT NULL",
     ]
     if engine.dialect.name != "postgresql":
-        logger.info(
-            "Skipping PostgreSQL legacy schema migration on non-PostgreSQL database"
-        )
+        logger.info("Skipping PostgreSQL legacy schema migration on non-PostgreSQL database")
         return
     with engine.begin() as connection:
         for statement in statements:
@@ -57,9 +55,7 @@ def ensure_database_schema():
 
 
 def already_exists(db, signal):
-    cutoff = datetime.now(timezone.utc) - timedelta(
-        minutes=DUPLICATE_WINDOW_MINUTES
-    )
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
     query = db.query(Signal).filter(
         Signal.symbol == signal["symbol"],
         Signal.timeframe == signal["timeframe"],
@@ -86,11 +82,12 @@ def format_signal_message(signal):
     reasoning = (signal.reasoning or "").strip()
     if len(reasoning) > 700:
         reasoning = reasoning[:697] + "..."
+    strength = signal_strength(signal.direction, float(signal.score or 0))
     lines = [
-        f"{emoji} <b>НОВЫЙ ТОРГОВЫЙ СИГНАЛ</b>", "",
+        f"{emoji} <b>КАЧЕСТВЕННЫЙ ТОРГОВЫЙ СИГНАЛ</b>", "",
         f"<b>{escape(signal.symbol)}</b> · {escape(signal.timeframe)}",
         f"Направление: <b>{direction}</b>",
-        f"Оценка: <b>{int(signal.score or 0)}/100</b> · Grade <b>{escape(signal.grade or '—')}</b>",
+        f"Сила сигнала: <b>{strength:.0f}/100</b> · Grade <b>{escape(signal.grade or '—')}</b>",
         f"Стратегия: {escape(strategy_names.get(signal.strategy, signal.strategy or '—'))}", "",
         f"Вход: <code>{entry:,.{digits}f}</code>",
         f"Stop Loss: <code>{stop:,.{digits}f}</code>",
@@ -100,16 +97,14 @@ def format_signal_message(signal):
         lines.extend(["<b>Основание:</b>", escape(reasoning), ""])
     lines.extend([
         "Режим: <b>Paper Trading</b>",
-        "Сигнал аналитический. Результат не гарантирован.",
+        "Риск контролируется. Результат не гарантирован.",
     ])
     return "\n".join(lines)
 
 
 async def deliver_pending_signals():
     if not settings.bot_token or not settings.owner_telegram_id:
-        logger.warning(
-            "Telegram delivery skipped: BOT_TOKEN or OWNER_TELEGRAM_ID missing"
-        )
+        logger.warning("Telegram delivery skipped: BOT_TOKEN or OWNER_TELEGRAM_ID missing")
         return 0
 
     db = SessionLocal()
@@ -119,7 +114,7 @@ async def deliver_pending_signals():
             db.query(Signal)
             .filter(Signal.status == "new")
             .order_by(Signal.id.asc())
-            .limit(20)
+            .limit(100)
             .all()
         )
         if not pending:
@@ -127,6 +122,14 @@ async def deliver_pending_signals():
 
         async with Bot(token=settings.bot_token) as bot:
             for signal in pending:
+                # Re-check at delivery time, including legacy rows already in DB.
+                if not is_quality_signal_values(
+                    signal.direction, signal.score, signal.grade
+                ):
+                    signal.status = "filtered"
+                    db.commit()
+                    logger.info("Filtered low-quality Telegram signal id=%s", signal.id)
+                    continue
                 try:
                     await bot.send_message(
                         chat_id=settings.owner_telegram_id,
@@ -143,13 +146,9 @@ async def deliver_pending_signals():
                     )
                 except Exception:
                     db.rollback()
-                    logger.exception(
-                        "Telegram delivery failed for signal id=%s",
-                        signal.id,
-                    )
+                    logger.exception("Telegram delivery failed for signal id=%s", signal.id)
     finally:
         db.close()
-
     return delivered
 
 
@@ -160,9 +159,7 @@ async def scan_market():
         for symbol in SYMBOLS:
             for timeframe in TIMEFRAMES:
                 try:
-                    candles = await market_data.get_klines(
-                        symbol, timeframe, 200
-                    )
+                    candles = await market_data.get_klines(symbol, timeframe, 200)
                     signal = generate_signal(
                         candles=candles,
                         symbol=symbol,
@@ -194,17 +191,17 @@ async def scan_market():
                     db.commit()
                     saved += 1
                     logger.info(
-                        "New signal saved: %s %s %s grade=%s",
-                        symbol, timeframe, signal["direction"], signal["grade"],
+                        "Quality signal saved: %s %s %s strength=%.0f grade=%s",
+                        symbol, timeframe, signal["direction"],
+                        signal_strength(signal["direction"], signal["score"]),
+                        signal["grade"],
                     )
                 except Exception:
                     db.rollback()
                     logger.exception("Scan failed for %s %s", symbol, timeframe)
-
-        logger.info("Scan completed. New signals: %s", saved)
+        logger.info("Scan completed. New quality signals: %s", saved)
     finally:
         db.close()
-
     return saved
 
 
@@ -214,9 +211,7 @@ async def run_worker():
         try:
             lock_connection = acquire_advisory_lock(SCANNER_LOCK_ID)
             if lock_connection is None:
-                logger.info(
-                    "Another Render instance owns the scanner lock; waiting"
-                )
+                logger.info("Another Render instance owns the scanner lock; waiting")
                 await asyncio.sleep(10)
                 continue
 
@@ -236,15 +231,12 @@ async def run_worker():
                     raise
                 except Exception:
                     logger.exception("Scanner cycle failed")
-
                 await asyncio.sleep(max(60, settings.scan_interval_seconds))
 
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception(
-                "Scanner supervisor failed; retrying in 15 seconds"
-            )
+            logger.exception("Scanner supervisor failed; retrying in 15 seconds")
             await asyncio.sleep(15)
         finally:
             if lock_connection is not None:
