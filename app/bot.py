@@ -30,7 +30,6 @@ def authorized(message: Message) -> bool:
 def mini_app_keyboard():
     if not settings.mini_app_url:
         return None
-
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
@@ -46,7 +45,6 @@ async def start_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
-
     await message.answer(
         "<b>Trading Intelligence PRO</b>\n\n"
         "Персональная торговая аналитическая система.\n"
@@ -66,7 +64,6 @@ async def help_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
-
     await message.answer(
         "<b>Команды Trading Intelligence PRO</b>\n\n"
         "/start — главное меню\n"
@@ -83,12 +80,11 @@ async def status_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
-
     await message.answer(
         "<b>Trading Intelligence PRO</b>\n\n"
         "Telegram Bot: online\n"
         "Режим: Paper Trading\n"
-        "Рыночный источник: Binance Spot API\n"
+        "Рыночные данные: Binance Spot / Kraken Spot fallback\n"
         "Исполнение реальных ордеров: отключено",
         parse_mode="HTML",
     )
@@ -99,26 +95,15 @@ async def summary_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
-
     db = SessionLocal()
-
     try:
         accounts = db.query(PaperAccount).all()
-
         if not accounts:
             await message.answer("Виртуальные счета пока не созданы.")
             return
-
-        total_balance = sum(
-            float(account.balance or 0)
-            for account in accounts
-        )
-        total_initial = sum(
-            float(account.initial_balance or 0)
-            for account in accounts
-        )
+        total_balance = sum(float(account.balance or 0) for account in accounts)
+        total_initial = sum(float(account.initial_balance or 0) for account in accounts)
         pnl = total_balance - total_initial
-
         lines = [
             "<b>Виртуальный портфель</b>",
             "",
@@ -127,15 +112,12 @@ async def summary_command(message: Message):
             f"PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}",
             "",
         ]
-
         for account in accounts:
             lines.append(
                 f"<b>{escape(account.name)}</b>: "
                 f"${float(account.balance or 0):,.2f}"
             )
-
         await message.answer("\n".join(lines), parse_mode="HTML")
-
     finally:
         db.close()
 
@@ -145,9 +127,7 @@ async def signals_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
-
     db = SessionLocal()
-
     try:
         signals = (
             db.query(Signal)
@@ -156,13 +136,10 @@ async def signals_command(message: Message):
             .limit(10)
             .all()
         )
-
         if not signals:
             await message.answer("Новых подходящих сигналов пока нет.")
             return
-
         lines = ["<b>Последние торговые сигналы</b>", ""]
-
         for signal in signals:
             direction = "ПОКУПКА" if signal.direction == "BUY" else "ПРОДАЖА"
             lines.extend([
@@ -173,9 +150,7 @@ async def signals_command(message: Message):
                 f"SL: {float(signal.stop_loss or 0):,.8g} · TP: {float(signal.take_profit or 0):,.8g}",
                 "",
             ])
-
         await message.answer("\n".join(lines), parse_mode="HTML")
-
     finally:
         db.close()
 
@@ -185,13 +160,10 @@ async def run_bot():
         raise RuntimeError("BOT_TOKEN is not configured")
     if not settings.allowed_user_ids:
         raise RuntimeError("OWNER_TELEGRAM_ID is not configured")
-
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
-
     logger.info("Trading Intelligence Telegram bot starting")
-
     try:
         await bot.delete_webhook(drop_pending_updates=False)
         await dispatcher.start_polling(bot)

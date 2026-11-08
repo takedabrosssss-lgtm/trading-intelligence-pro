@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import SessionLocal, Signal, init_db, engine
+from app.instance_lock import acquire_advisory_lock, release_advisory_lock
 from app.market_data import market_data
 from app.signals import generate_signal
 
@@ -20,6 +21,7 @@ SYMBOLS = [
 TIMEFRAMES = ["15m", "1h", "4h"]
 STRATEGIES = {"15m": "scalping", "1h": "intraday", "4h": "swing"}
 DUPLICATE_WINDOW_MINUTES = 60
+SCANNER_LOCK_ID = 81420311
 
 
 def ensure_database_schema():
@@ -34,8 +36,6 @@ def ensure_database_schema():
         "ALTER TABLE signals ADD COLUMN IF NOT EXISTS strategy VARCHAR(50)",
         "ALTER TABLE signals ADD COLUMN IF NOT EXISTS reasoning TEXT",
         "ALTER TABLE signals ADD COLUMN IF NOT EXISTS indicators JSON",
-        # These columns belong to the previous schema and are not written by the current ORM.
-        # Relaxing NOT NULL preserves their historical values while allowing current inserts.
         "ALTER TABLE signals ALTER COLUMN entry DROP NOT NULL",
         "ALTER TABLE signals ALTER COLUMN sl DROP NOT NULL",
         "ALTER TABLE signals ALTER COLUMN tp1 DROP NOT NULL",
@@ -44,6 +44,9 @@ def ensure_database_schema():
         "ALTER TABLE signals ALTER COLUMN sample_size DROP NOT NULL",
         "ALTER TABLE signals ALTER COLUMN notes DROP NOT NULL",
     ]
+    if engine.dialect.name != "postgresql":
+        logger.info("Skipping PostgreSQL legacy schema migration on non-PostgreSQL database")
+        return
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
@@ -98,7 +101,13 @@ async def deliver_pending_signals():
     db = SessionLocal()
     delivered = 0
     try:
-        pending = db.query(Signal).filter(Signal.status == "new").order_by(Signal.id.asc()).limit(20).all()
+        pending = (
+            db.query(Signal)
+            .filter(Signal.status == "new")
+            .order_by(Signal.id.asc())
+            .limit(20)
+            .all()
+        )
         if not pending:
             return 0
         async with Bot(token=settings.bot_token) as bot:
@@ -113,7 +122,12 @@ async def deliver_pending_signals():
                     signal.status = "sent"
                     db.commit()
                     delivered += 1
-                    logger.info("Telegram signal delivered: id=%s %s %s", signal.id, signal.symbol, signal.timeframe)
+                    logger.info(
+                        "Telegram signal delivered: id=%s %s %s",
+                        signal.id,
+                        signal.symbol,
+                        signal.timeframe,
+                    )
                 except Exception:
                     db.rollback()
                     logger.exception("Telegram delivery failed for signal id=%s", signal.id)
@@ -159,7 +173,13 @@ async def scan_market():
                     db.add(record)
                     db.commit()
                     saved += 1
-                    logger.info("New signal saved: %s %s %s grade=%s", symbol, timeframe, signal["direction"], signal["grade"])
+                    logger.info(
+                        "New signal saved: %s %s %s grade=%s",
+                        symbol,
+                        timeframe,
+                        signal["direction"],
+                        signal["grade"],
+                    )
                 except Exception:
                     db.rollback()
                     logger.exception("Scan failed for %s %s", symbol, timeframe)
@@ -170,18 +190,43 @@ async def scan_market():
 
 
 async def run_worker():
-    init_db()
-    ensure_database_schema()
-    logger.info("Trading Intelligence scanner started; interval=%ss", settings.scan_interval_seconds)
     while True:
+        lock_connection = None
         try:
-            await scan_market()
-            await deliver_pending_signals()
+            lock_connection = acquire_advisory_lock(SCANNER_LOCK_ID)
+            if lock_connection is None:
+                logger.info("Another Render instance owns the scanner lock; waiting")
+                await asyncio.sleep(10)
+                continue
+
+            init_db()
+            ensure_database_schema()
+            logger.info(
+                "Trading Intelligence scanner lock acquired; interval=%ss",
+                settings.scan_interval_seconds,
+            )
+
+            while True:
+                try:
+                    await scan_market()
+                    await deliver_pending_signals()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Scanner cycle failed")
+                await asyncio.sleep(max(60, settings.scan_interval_seconds))
+
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Scanner cycle failed")
-        await asyncio.sleep(max(60, settings.scan_interval_seconds))
+            logger.exception("Scanner supervisor failed; retrying in 15 seconds")
+            await asyncio.sleep(15)
+        finally:
+            if lock_connection is not None:
+                try:
+                    release_advisory_lock(lock_connection, SCANNER_LOCK_ID)
+                except Exception:
+                    logger.exception("Could not release scanner advisory lock")
 
 
 if __name__ == "__main__":

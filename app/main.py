@@ -22,6 +22,7 @@ from app.database import (
     SessionLocal,
     init_db,
 )
+from app.instance_lock import acquire_advisory_lock, release_advisory_lock
 from app.market_data import market_data
 from app.analyzer import analyze_market
 from app.worker import run_worker
@@ -31,6 +32,7 @@ logger = logging.getLogger("trading-intelligence")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+TELEGRAM_POLLING_LOCK_ID = 81420312
 
 
 def validate_telegram_init_data(init_data: str) -> dict:
@@ -40,25 +42,21 @@ def validate_telegram_init_data(init_data: str) -> dict:
     try:
         parsed = dict(parse_qsl(init_data, keep_blank_values=True))
         received_hash = parsed.pop("hash", None)
-
         if not received_hash:
             raise ValueError("Missing hash")
 
         auth_date = int(parsed.get("auth_date", "0"))
-
         if time.time() - auth_date > 86400 or auth_date > time.time() + 60:
             raise ValueError("Expired authentication")
 
         data_check_string = "\n".join(
             f"{key}={value}" for key, value in sorted(parsed.items())
         )
-
         secret_key = hmac.new(
             b"WebAppData",
             settings.telegram_token.encode(),
             hashlib.sha256,
         ).digest()
-
         calculated_hash = hmac.new(
             secret_key,
             data_check_string.encode(),
@@ -70,10 +68,8 @@ def validate_telegram_init_data(init_data: str) -> dict:
 
         user_data = json.loads(parsed.get("user", "{}"))
         user_id = str(user_data.get("id", ""))
-
         if not user_id or user_id not in settings.allowed_user_ids:
             raise HTTPException(403, "Access denied")
-
         return user_data
 
     except HTTPException:
@@ -95,13 +91,28 @@ async def run_bot_supervisor():
     from app.bot import run_bot
 
     while True:
+        lock_connection = None
         try:
+            lock_connection = acquire_advisory_lock(TELEGRAM_POLLING_LOCK_ID)
+            if lock_connection is None:
+                logger.info("Another Render instance owns Telegram polling; waiting")
+                await asyncio.sleep(10)
+                continue
+
+            logger.info("Telegram polling advisory lock acquired")
             await run_bot()
+
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Telegram bot stopped; retrying in 15 seconds")
             await asyncio.sleep(15)
+        finally:
+            if lock_connection is not None:
+                try:
+                    release_advisory_lock(lock_connection, TELEGRAM_POLLING_LOCK_ID)
+                except Exception:
+                    logger.exception("Could not release Telegram polling advisory lock")
 
 
 @asynccontextmanager
@@ -114,7 +125,6 @@ async def lifespan(app: FastAPI):
             account = db.query(PaperAccount).filter(
                 PaperAccount.name == name
             ).first()
-
             if not account:
                 account = PaperAccount(
                     name=name,
@@ -123,7 +133,6 @@ async def lifespan(app: FastAPI):
                     initial_balance=2500.0,
                 )
                 db.add(account)
-
         db.commit()
     finally:
         db.close()
@@ -162,7 +171,7 @@ async def api_status(user: dict = Header(default=None)):
     return {
         "status": "online",
         "service": "Trading Intelligence PRO",
-        "market_data": "Binance public API",
+        "market_data": "Binance Spot with Kraken Spot fallback",
         "mode": "paper_trading",
     }
 
@@ -173,10 +182,8 @@ async def market_price(
     user=__import__("fastapi").Depends(require_user),
 ):
     symbol = symbol.upper()
-
     if not symbol.endswith("USDT") or not symbol[:-4].isalnum():
         raise HTTPException(400, "Invalid symbol")
-
     try:
         return await market_data.get_24h_ticker(symbol)
     except Exception as exc:
@@ -192,10 +199,8 @@ async def market_klines(
     user=__import__("fastapi").Depends(require_user),
 ):
     allowed = {"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"}
-
     if interval not in allowed:
         raise HTTPException(400, "Unsupported interval")
-
     try:
         return await market_data.get_klines(symbol.upper(), interval, limit)
     except Exception as exc:
@@ -223,23 +228,19 @@ async def analysis(
 @app.get("/api/portfolio")
 async def portfolio(user=__import__("fastapi").Depends(require_user)):
     db = SessionLocal()
-
     try:
         accounts = db.query(PaperAccount).all()
         account_data = []
         total_balance = 0.0
         total_initial = 0.0
         total_equity = 0.0
-
         for account in accounts:
             positions = db.query(Position).filter(
                 Position.account_id == account.id,
                 Position.status == "open",
             ).all()
-
             balance = float(account.balance or 0)
             equity = balance
-
             account_data.append({
                 "name": account.name,
                 "strategy": account.strategy,
@@ -247,11 +248,9 @@ async def portfolio(user=__import__("fastapi").Depends(require_user)):
                 "equity": equity,
                 "open_positions": len(positions),
             })
-
             total_balance += balance
             total_initial += float(account.initial_balance or 0)
             total_equity += equity
-
         return {
             "initial_capital": total_initial,
             "balance": total_balance,
@@ -269,7 +268,6 @@ async def history(
     user=__import__("fastapi").Depends(require_user),
 ):
     db = SessionLocal()
-
     try:
         trades = (
             db.query(Trade)
@@ -277,7 +275,6 @@ async def history(
             .limit(limit)
             .all()
         )
-
         return {
             "trades": [
                 {
@@ -297,10 +294,8 @@ async def history(
 @app.get("/")
 async def index():
     file = FRONTEND_DIR / "index.html"
-
     if not file.exists():
         raise HTTPException(404, "Frontend not found")
-
     return FileResponse(file)
 
 

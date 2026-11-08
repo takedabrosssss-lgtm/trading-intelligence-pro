@@ -8,22 +8,31 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 BASE_URL = settings.binance_base_url
-BYBIT_BASE_URL = settings.bybit_base_url
+KRAKEN_BASE_URL = "https://api.kraken.com"
 
 ALLOWED_INTERVALS = {
     "1m", "5m", "15m", "30m",
     "1h", "4h", "1d", "1w",
 }
 
-BYBIT_INTERVALS = {
-    "1m": "1",
-    "5m": "5",
-    "15m": "15",
-    "30m": "30",
-    "1h": "60",
-    "4h": "240",
-    "1d": "D",
-    "1w": "W",
+KRAKEN_INTERVALS = {
+    "1m": 1,
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "4h": 240,
+    "1d": 1440,
+    "1w": 10080,
+}
+
+# Kraken uses XBT for Bitcoin and XDG for Dogecoin in its public API.
+# BNB is quoted against USD on Kraken; the resulting USD price is effectively
+# comparable to the USDT-denominated symbol for signal analysis.
+KRAKEN_PAIRS = {
+    "BTCUSDT": "XBTUSDT",
+    "DOGEUSDT": "XDGUSDT",
+    "BNBUSDT": "BNBUSD",
 }
 
 
@@ -38,7 +47,10 @@ class MarketData:
                 response = await client.get(
                     url,
                     params=params,
-                    headers={"Accept": "application/json", "User-Agent": "TradingIntelligencePRO/1.0"},
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "TradingIntelligencePRO/1.0",
+                    },
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -56,33 +68,70 @@ class MarketData:
             logger.warning("Binance request failed: %s", exc)
             raise RuntimeError("Invalid market data response") from exc
 
-    async def _bybit_ticker(self, symbol: str) -> dict:
-        url = f"{BYBIT_BASE_URL}/v5/market/tickers"
+    def _kraken_pair(self, symbol: str) -> str:
+        return KRAKEN_PAIRS.get(symbol.upper(), symbol.upper())
+
+    async def _kraken_get(self, endpoint: str, params: dict | None = None) -> dict:
+        url = f"{KRAKEN_BASE_URL}/0/public/{endpoint}"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.get(
                 url,
-                params={"category": "spot", "symbol": symbol.upper()},
-                headers={"Accept": "application/json", "User-Agent": "TradingIntelligencePRO/1.0"},
+                params=params,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "TradingIntelligencePRO/1.0",
+                },
             )
             response.raise_for_status()
             payload = response.json()
 
-        if payload.get("retCode") != 0:
-            raise RuntimeError(f"Bybit API error: {payload.get('retMsg', 'Unknown error')}")
-        items = payload.get("result", {}).get("list", [])
-        if not items:
-            raise RuntimeError(f"Bybit returned no ticker for {symbol}")
-        return items[0]
+        errors = payload.get("error") or []
+        if errors:
+            raise RuntimeError("Kraken API error: " + "; ".join(errors))
+
+        result = payload.get("result") or {}
+        if not result:
+            raise RuntimeError("Kraken returned an empty result")
+        return result
+
+    def _kraken_result_value(self, result: dict):
+        for key, value in result.items():
+            if key != "last":
+                return value
+        raise RuntimeError("Kraken response contains no market data")
+
+    async def _kraken_ticker(self, symbol: str) -> dict:
+        result = await self._kraken_get(
+            "Ticker",
+            {"pair": self._kraken_pair(symbol)},
+        )
+        ticker = self._kraken_result_value(result)
+        if not isinstance(ticker, dict) or "c" not in ticker:
+            raise RuntimeError(f"Kraken returned no ticker for {symbol}")
+        return ticker
 
     async def get_price(self, symbol: str) -> dict:
         symbol = symbol.upper()
         try:
             data = await self._get("/api/v3/ticker/price", {"symbol": symbol})
-            return {"symbol": data["symbol"], "price": float(data["price"]), "provider": "Binance Spot"}
+            return {
+                "symbol": symbol,
+                "price": float(data["price"]),
+                "provider": "Binance Spot",
+            }
         except Exception as binance_error:
-            logger.warning("Binance price unavailable for %s; trying Bybit: %s", symbol, binance_error)
-            ticker = await self._bybit_ticker(symbol)
-            return {"symbol": symbol, "price": float(ticker["lastPrice"]), "provider": "Bybit Spot"}
+            logger.warning(
+                "Binance price unavailable for %s; falling back to Kraken: %s",
+                symbol,
+                binance_error,
+            )
+
+        ticker = await self._kraken_ticker(symbol)
+        return {
+            "symbol": symbol,
+            "price": float(ticker["c"][0]),
+            "provider": "Kraken Spot",
+        }
 
     async def get_24h_ticker(self, symbol: str) -> dict:
         symbol = symbol.upper()
@@ -100,25 +149,40 @@ class MarketData:
                 "provider": "Binance Spot",
             }
         except Exception as binance_error:
-            logger.warning("Binance ticker unavailable for %s; trying Bybit: %s", symbol, binance_error)
-            ticker = await self._bybit_ticker(symbol)
-            last_price = float(ticker["lastPrice"])
-            previous_price = float(ticker.get("prevPrice24h") or last_price)
-            change = last_price - previous_price
-            change_percent = float(ticker.get("price24hPcnt") or 0) * 100
-            return {
-                "symbol": symbol,
-                "lastPrice": last_price,
-                "priceChange": change,
-                "priceChangePercent": change_percent,
-                "volume": float(ticker.get("volume24h") or 0),
-                "quoteVolume": float(ticker.get("turnover24h") or 0),
-                "highPrice": float(ticker.get("highPrice24h") or last_price),
-                "lowPrice": float(ticker.get("lowPrice24h") or last_price),
-                "provider": "Bybit Spot",
-            }
+            logger.warning(
+                "Binance ticker unavailable for %s; falling back to Kraken: %s",
+                symbol,
+                binance_error,
+            )
 
-    async def get_klines(self, symbol: str, interval: str = "1h", limit: int = 200) -> list[dict]:
+        ticker = await self._kraken_ticker(symbol)
+        last_price = float(ticker["c"][0])
+        open_price = float(ticker.get("o") or last_price)
+        volume_data = ticker.get("v") or [0, 0]
+        high_data = ticker.get("h") or [last_price, last_price]
+        low_data = ticker.get("l") or [last_price, last_price]
+        volume_24h = float(volume_data[1] if len(volume_data) > 1 else volume_data[0])
+        change = last_price - open_price
+        change_percent = (change / open_price * 100) if open_price else 0.0
+
+        return {
+            "symbol": symbol,
+            "lastPrice": last_price,
+            "priceChange": change,
+            "priceChangePercent": change_percent,
+            "volume": volume_24h,
+            "quoteVolume": volume_24h * last_price,
+            "highPrice": float(high_data[1] if len(high_data) > 1 else high_data[0]),
+            "lowPrice": float(low_data[1] if len(low_data) > 1 else low_data[0]),
+            "provider": "Kraken Spot",
+        }
+
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str = "1h",
+        limit: int = 200,
+    ) -> list[dict]:
         symbol = symbol.upper()
         if interval not in ALLOWED_INTERVALS:
             raise ValueError("Unsupported candle interval")
@@ -127,7 +191,11 @@ class MarketData:
         try:
             data = await self._get(
                 "/api/v3/klines",
-                {"symbol": symbol, "interval": interval, "limit": min(limit, 500)},
+                {
+                    "symbol": symbol,
+                    "interval": interval,
+                    "limit": min(limit, 500),
+                },
             )
             candles = [{
                 "timestamp": int(c[0]),
@@ -137,44 +205,48 @@ class MarketData:
                 "close": float(c[4]),
                 "volume": float(c[5]),
             } for c in data]
-            logger.info("Market candles loaded from Binance: %s %s (%s)", symbol, interval, len(candles))
+            logger.info(
+                "Market candles loaded from Binance: %s %s (%s)",
+                symbol,
+                interval,
+                len(candles),
+            )
             return candles
         except Exception as binance_error:
-            logger.warning("Binance klines unavailable for %s %s; falling back to Bybit: %s", symbol, interval, binance_error)
-
-        url = f"{BYBIT_BASE_URL}/v5/market/kline"
-        params = {
-            "category": "spot",
-            "symbol": symbol,
-            "interval": BYBIT_INTERVALS[interval],
-            "limit": min(limit, 1000),
-        }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(
-                url,
-                params=params,
-                headers={"Accept": "application/json", "User-Agent": "TradingIntelligencePRO/1.0"},
+            logger.warning(
+                "Binance klines unavailable for %s %s; falling back to Kraken: %s",
+                symbol,
+                interval,
+                binance_error,
             )
-            response.raise_for_status()
-            payload = response.json()
 
-        if payload.get("retCode") != 0:
-            raise RuntimeError(f"Bybit API error: {payload.get('retMsg', 'Unknown error')}")
-
-        rows = payload.get("result", {}).get("list", [])
+        result = await self._kraken_get(
+            "OHLC",
+            {
+                "pair": self._kraken_pair(symbol),
+                "interval": KRAKEN_INTERVALS[interval],
+            },
+        )
+        rows = self._kraken_result_value(result)
         if not rows:
-            raise RuntimeError(f"Bybit returned no candles for {symbol} {interval}")
+            raise RuntimeError(f"Kraken returned no candles for {symbol} {interval}")
 
         candles = [{
-            "timestamp": int(c[0]),
-            "open": float(c[1]),
-            "high": float(c[2]),
-            "low": float(c[3]),
-            "close": float(c[4]),
-            "volume": float(c[5]),
-        } for c in rows]
+            "timestamp": int(float(candle[0])) * 1000,
+            "open": float(candle[1]),
+            "high": float(candle[2]),
+            "low": float(candle[3]),
+            "close": float(candle[4]),
+            "volume": float(candle[6]),
+        } for candle in rows]
         candles.sort(key=lambda candle: candle["timestamp"])
-        logger.info("Market candles loaded from Bybit Spot: %s %s (%s)", symbol, interval, len(candles))
+        candles = candles[-limit:]
+        logger.info(
+            "Market candles loaded from Kraken Spot: %s %s (%s)",
+            symbol,
+            interval,
+            len(candles),
+        )
         return candles
 
     async def get_multiple_prices(self, symbols: list[str]) -> list[dict]:
@@ -192,7 +264,7 @@ class MarketData:
             return isinstance(data, dict)
         except Exception:
             try:
-                ticker = await self._bybit_ticker("BTCUSDT")
+                ticker = await self._kraken_ticker("BTCUSDT")
                 return bool(ticker)
             except Exception:
                 return False
