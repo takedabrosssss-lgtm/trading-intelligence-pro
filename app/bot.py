@@ -1,134 +1,256 @@
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from app.config import get_settings
-from app.database import SessionLocal, latest_signals, Subscriber
-from app.market_data import WATCHLIST, MarketData
-from app.analyzer import analyze
-from app.signals import SignalService
 
-settings = get_settings()
-bot = Bot(settings.bot_token) if settings.bot_token else None
-dp = Dispatcher()
+import asyncio
+import logging
 
+from aiogram import Bot, Dispatcher, Router
+from aiogram.filters import Command, CommandStart
+from aiogram.types import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    WebAppInfo,
+)
 
-def main_keyboard():
-    rows = [[InlineKeyboardButton(text="📊 Открыть Mini App", web_app=WebAppInfo(url=settings.mini_app_url))]] if settings.mini_app_url else []
-    rows += [[InlineKeyboardButton(text="📈 Сводка", callback_data="summary"),
-              InlineKeyboardButton(text="🟢 Сигналы", callback_data="signals")]]
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+from app.config import settings
+from app.database import PaperAccount, Position, SessionLocal
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@dp.message(Command("start"))
-async def start(m: Message):
-    await m.answer("🤖 <b>Trading Intelligence PRO</b>\nРыночная аналитика и Paper Trading.\n\nИспользуйте /summary, /analyze BTC или /status.", reply_markup=main_keyboard(), parse_mode="HTML")
+router = Router()
 
 
-@dp.message(Command("help"))
-async def help_cmd(m: Message):
-    await m.answer("/analyze BTC|ETH|SOL|EURUSD|XAUUSD|NAS100\n/summary — обзор инструментов\n/signals — активные сигналы\n/history — архив\n/status — состояние сервисов")
+def is_authorized(message: Message) -> bool:
+    allowed_ids = settings.allowed_user_ids
+
+    if not allowed_ids or message.from_user is None:
+        return False
+
+    return str(message.from_user.id) in allowed_ids
 
 
-@dp.message(Command("status"))
-async def status(m: Message):
-    await m.answer(f"🟢 Bot process online\nPaper trading: {settings.paper_trading}\nScan interval: {settings.scan_interval_seconds}s\nProvider: {settings.market_data_provider}\nNote: provider reachability is checked during analysis.")
+def main_menu() -> InlineKeyboardMarkup:
+    buttons = []
+
+    if settings.MINI_APP_URL:
+        buttons.append([
+            InlineKeyboardButton(
+                text="Открыть Trading Intelligence PRO",
+                web_app=WebAppInfo(url=settings.MINI_APP_URL),
+            )
+        ])
+
+    buttons.extend([
+        [
+            InlineKeyboardButton(
+                text="Портфель",
+                callback_data="portfolio",
+            ),
+            InlineKeyboardButton(
+                text="Сигналы",
+                callback_data="signals",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="Статус системы",
+                callback_data="status",
+            )
+        ],
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-@dp.message(Command("analyze"))
-async def analyze_cmd(m: Message):
-    parts = (m.text or "").split()
-    if len(parts) < 2:
-        await m.answer("Укажите актив: /analyze BTC")
-        return
-    aliases = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT"}
-    symbol = aliases.get(parts[1].upper(), parts[1].upper())
-    if symbol not in WATCHLIST:
-        await m.answer("Доступно: BTC, ETH, SOL, EURUSD, XAUUSD, NAS100")
-        return
-    await m.answer(f"⏳ Анализирую {symbol}...")
-    try:
-        candles = await MarketData().candles(symbol, "1h", 1000)
-        result = analyze(candles, symbol)
-        if not result.get("signal"):
-            await m.answer(f"⚪ {symbol}: сигнал не опубликован.\nПричина: {result['reason']}")
-            return
-        s = result["signal"]
-        await m.answer(f"🟢 <b>{symbol} {s['direction']}</b>\nEntry: {s['entry']:.5g}\nSL: {s['sl']:.5g}\nTP1: {s['tp1']:.5g}\nTP2: {s['tp2']:.5g}\nИсторический winrate: {s['historical_winrate']}% ({s['sample_size']} сделок)\nScore: {s['score']}/100\n\nPaper signal; не финансовая рекомендация.", parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"Ошибка получения/анализа данных: {e}")
-
-
-@dp.message(Command("summary"))
-async def summary(m: Message):
-    await m.answer("⏳ Формирую сводку...")
-    lines = []
-    for symbol in WATCHLIST:
-        try:
-            price = await MarketData().quote(symbol)
-            lines.append(f"• {symbol}: {price:.6g}")
-        except Exception as e:
-            lines.append(f"• {symbol}: недоступен ({str(e)[:70]})")
-    await m.answer("<b>Market summary</b>\n" + "\n".join(lines), parse_mode="HTML")
-
-
-@dp.message(Command("signals"))
-async def signals(m: Message):
-    async with SessionLocal() as db:
-        rows = await latest_signals(db, 20)
-    active = [x for x in rows if x.status in ("ACTIVE", "TP1", "PUBLISHED")]
-    if not active:
-        return await m.answer("Активных сигналов пока нет.")
-    await m.answer("\n\n".join(f"<b>{x.symbol} {x.direction}</b> · {x.status}\nEntry {x.entry:.6g} | SL {x.sl:.6g} | TP1 {x.tp1:.6g} | TP2 {x.tp2:.6g}" for x in active), parse_mode="HTML")
-
-
-@dp.message(Command("history"))
-async def history(m: Message):
-    async with SessionLocal() as db:
-        rows = await latest_signals(db, 30)
-    closed = [x for x in rows if x.status == "CLOSED"]
-    if not closed:
-        return await m.answer("Закрытых paper-сделок пока нет.")
-    await m.answer("\n".join(f"{x.symbol} {x.direction}: {x.result} · {x.created_at}" for x in closed))
-
-
-@dp.callback_query(F.data == "summary")
-async def summary_cb(c):
-    await summary(c.message)
-    await c.answer()
-
-
-@dp.callback_query(F.data == "signals")
-async def signals_cb(c):
-    await signals(c.message)
-    await c.answer()
-
-
-async def publish_text(text):
-    if not bot:
-        return
-    async with SessionLocal() as db:
-        subscribers = list((await db.execute(__import__("sqlalchemy").select(Subscriber))).scalars())
-    for subscriber in subscribers:
-        try:
-            await bot.send_message(subscriber.chat_id, text, parse_mode="HTML")
-        except Exception:
-            continue
-
-
-class TelegramNotifier:
-    async def publish_signal(self, s):
-        if not bot:
-            return
-        text = (
-            f"📡 <b>{s['symbol']} · {s['direction']}</b>\n"
-            f"Entry: <code>{s['entry']:.6g}</code>\nSL: <code>{s['sl']:.6g}</code>\n"
-            f"TP1: <code>{s['tp1']:.6g}</code>\nTP2: <code>{s['tp2']:.6g}</code>\n"
-            f"Historical winrate: <b>{s['historical_winrate']}%</b> ({s['sample_size']} trades)\n"
-            f"Score: {s['score']}/100\n\n🧪 Paper Trading · Не является финансовой рекомендацией"
+@router.message(CommandStart())
+async def start_command(message: Message):
+    if not is_authorized(message):
+        await message.answer(
+            "Доступ запрещён. Этот бот предназначен для личного использования."
         )
-        await publish_text(text)
+        return
+
+    await message.answer(
+        "Trading Intelligence PRO 2.0\n\n"
+        "Персональная торговая аналитическая система.\n"
+        "Режим: Paper Trading.\n"
+        "Реальные ордера не размещаются.",
+        reply_markup=main_menu(),
+    )
 
 
-async def run_polling():
-    if bot:
-        await dp.start_polling(bot)
+@router.message(Command("help"))
+async def help_command(message: Message):
+    if not is_authorized(message):
+        return
+
+    await message.answer(
+        "Команды Trading Intelligence PRO:\n\n"
+        "/start — главное меню\n"
+        "/summary — состояние виртуального портфеля\n"
+        "/signals — список последних сигналов\n"
+        "/status — состояние бота"
+    )
+
+
+@router.message(Command("summary"))
+async def summary_command(message: Message):
+    if not is_authorized(message):
+        return
+
+    db = SessionLocal()
+
+    try:
+        accounts = db.query(PaperAccount).all()
+
+        if not accounts:
+            await message.answer("Виртуальные счета пока не созданы.")
+            return
+
+        initial = sum(a.initial_balance for a in accounts)
+        balance = sum(a.balance for a in accounts)
+
+        unrealized = 0.0
+
+        for account in accounts:
+            positions = (
+                db.query(Position)
+                .filter(
+                    Position.account_id == account.id,
+                    Position.status == "open",
+                )
+                .all()
+            )
+
+            unrealized += sum(
+                p.unrealized_pnl or 0 for p in positions
+            )
+
+        equity = balance + unrealized
+        pnl = equity - initial
+
+        await message.answer(
+            "VIRTUAL PORTFOLIO\n\n"
+            f"Начальный капитал: ${initial:,.2f}\n"
+            f"Баланс: ${balance:,.2f}\n"
+            f"Нереализованный PnL: ${unrealized:,.2f}\n"
+            f"Equity: ${equity:,.2f}\n"
+            f"Общий PnL: ${pnl:,.2f}\n\n"
+            "Режим: Paper Trading"
+        )
+
+    except Exception:
+        logger.exception("Portfolio summary failed")
+        await message.answer("Не удалось получить данные портфеля.")
+
+    finally:
+        db.close()
+
+
+@router.message(Command("signals"))
+async def signals_command(message: Message):
+    if not is_authorized(message):
+        return
+
+    await message.answer(
+        "Модуль сигналов подключается.\n"
+        "Автоматический сканер будет активирован "
+        "после настройки фонового процесса."
+    )
+
+
+@router.message(Command("status"))
+async def status_command(message: Message):
+    if not is_authorized(message):
+        return
+
+    await message.answer(
+        "Trading Intelligence PRO 2.0\n\n"
+        "Telegram Bot: активен\n"
+        "Режим: Paper Trading\n"
+        "Реальная торговля: отключена\n"
+        "Автоматический сканер: требует настройки"
+    )
+
+
+@router.callback_query()
+async def menu_callback(callback):
+    if callback.from_user is None:
+        await callback.answer()
+        return
+
+    if str(callback.from_user.id) not in settings.allowed_user_ids:
+        await callback.answer("Доступ запрещён.", show_alert=True)
+        return
+
+    if callback.data == "portfolio":
+        await callback.answer()
+        await summary_command(callback.message)
+
+    elif callback.data == "signals":
+        await callback.answer()
+        await signals_command(callback.message)
+
+    elif callback.data == "status":
+        await callback.answer()
+        await status_command(callback.message)
+
+    else:
+        await callback.answer()
+
+
+async def notify_user(
+    bot: Bot,
+    telegram_id: int,
+    text: str,
+):
+    """Send a notification to the authorized owner."""
+
+    if str(telegram_id) not in settings.allowed_user_ids:
+        logger.warning("Notification blocked for unauthorized user")
+        return
+
+    await bot.send_message(
+        chat_id=telegram_id,
+        text=text,
+    )
+
+
+async def run_bot():
+    token = settings.telegram_token
+
+    if not token:
+        raise RuntimeError("Telegram bot token is not configured.")
+
+    if not settings.allowed_user_ids:
+        raise RuntimeError(
+            "Set OWNER_TELEGRAM_ID in environment variables."
+        )
+
+    bot = Bot(token=token)
+    dispatcher = Dispatcher()
+    dispatcher.include_router(router)
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="summary", description="Мой портфель"),
+        BotCommand(command="signals", description="Торговые сигналы"),
+        BotCommand(command="status", description="Статус системы"),
+        BotCommand(command="help", description="Помощь"),
+    ])
+
+    logger.info("Telegram bot started.")
+
+    try:
+        await dispatcher.start_polling(
+            bot,
+            allowed_updates=dispatcher.resolve_used_update_types(),
+        )
+    finally:
+        await bot.session.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(run_bot())
+    
