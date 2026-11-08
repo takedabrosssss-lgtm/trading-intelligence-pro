@@ -1,121 +1,176 @@
+
+import logging
 from datetime import datetime, timezone
-from sqlalchemy import select
-from app.database import Signal
-from app.market_data import MarketData, WATCHLIST
-from app.analyzer import analyze
 
-class SignalService:
-    def __init__(self, notifier=None):
-        self.data = MarketData()
-        self.notifier = notifier
+from app.analyzer import analyze_market
 
-    async def scan_symbol(self, symbol):
-        candles = await self.data.candles(symbol, "1h", 1000)
-        result = analyze(candles, symbol, "1h")
-        if not result.get("signal"):
-            return result
+logger = logging.getLogger(__name__)
 
-        s = result["signal"]
-        from app.database import SessionLocal
+VALID_GRADES = {"S", "A", "B", "C"}
 
-        async with SessionLocal() as db:
-            q = await db.execute(
-                select(Signal).where(
-                    Signal.symbol == symbol,
-                    Signal.status.in_(["PUBLISHED", "ACTIVE"])
-                )
-            )
-            if q.scalars().first():
-                return {
-                    "symbol": symbol,
-                    "signal": None,
-                    "reason": "Existing active signal."
-                }
 
-            row = Signal(
-                symbol=symbol,
-                direction=s["direction"],
-                timeframe=s["timeframe"],
-                entry=s["entry"],
-                sl=s["sl"],
-                tp1=s["tp1"],
-                tp2=s["tp2"],
-                historical_winrate=s["historical_winrate"],
-                sample_size=s["sample_size"],
-                score=s["score"],
-                status="ACTIVE",
-                notes=s["notes"]
-            )
-            db.add(row)
-            await db.commit()
-            await db.refresh(row)
-            s["id"] = row.id
+def generate_signal(
+    symbol: str,
+    candles: list[dict],
+    market: str = "crypto",
+    timeframe: str = "1h",
+    strategy: str = "intraday",
+) -> dict:
+    """Generate a structured signal from market candles."""
 
-        if self.notifier:
-            await self.notifier.publish_signal(s)
+    symbol = symbol.upper().strip()
 
+    analysis = analyze_market(candles)
+
+    if analysis.get("status") != "ok":
         return {
+            "status": analysis.get("status", "error"),
             "symbol": symbol,
-            "signal": s,
-            "reason": "Published and paper-tracked."
+            "message": analysis.get(
+                "message",
+                "Market analysis failed."
+            ),
         }
 
-    async def scan_all(self):
-        results = []
-        for symbol in WATCHLIST:
-            try:
-                results.append(await self.scan_symbol(symbol))
-            except Exception as e:
-                results.append({
-                    "symbol": symbol,
-                    "signal": None,
-                    "reason": str(e)
-                })
-        return results
+    direction = analysis["direction"]
+    price = float(analysis["price"])
+    indicators = analysis["indicators"]
+    grade = analysis["grade"]
+
+    if direction not in {"BUY", "SELL"}:
+        return {
+            "status": "no_signal",
+            "symbol": symbol,
+            "market": market,
+            "timeframe": timeframe,
+            "analysis": analysis,
+        }
+
+    atr_value = float(indicators["atr14"])
+
+    if atr_value <= 0 or price <= 0:
+        return {
+            "status": "invalid_data",
+            "symbol": symbol,
+            "message": "Invalid price or ATR.",
+        }
+
+    # Conservative initial risk model.
+    stop_distance = atr_value * 1.5
+    reward_distance = atr_value * 3.0
+
+    if direction == "BUY":
+        stop_loss = price - stop_distance
+        take_profit = price + reward_distance
+    else:
+        stop_loss = price + stop_distance
+        take_profit = price - reward_distance
+
+    risk_percent = abs(price - stop_loss) / price * 100
+    reward_percent = abs(take_profit - price) / price * 100
+
+    signal = {
+        "status": "new",
+        "symbol": symbol,
+        "market": market,
+        "timeframe": timeframe,
+        "direction": direction,
+        "grade": grade,
+        "confidence_score": analysis["confidence_score"],
+        "confidence_description": analysis[
+            "confidence_description"
+        ],
+        "strategy": strategy,
+        "entry_price": round(price, 10),
+        "stop_loss": round(stop_loss, 10),
+        "take_profit": round(take_profit, 10),
+        "risk_reward_ratio": round(
+            reward_distance / stop_distance, 2
+        ),
+        "risk_percent": round(risk_percent, 4),
+        "potential_reward_percent": round(
+            reward_percent, 4
+        ),
+        "indicators": indicators,
+        "reasoning": analysis["reasons"],
+        "created_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
+        "execution_mode": "paper_only",
+    }
+
+    return signal
 
 
-async def track_open_signals():
-    from app.database import SessionLocal
-    from app.market_data import MarketData
-    from sqlalchemy import select
+def is_eligible_for_auto_paper_trade(signal: dict) -> bool:
+    """
+    Only S and A signals may be considered by the paper trader.
+    This function does not execute trades.
+    """
 
-    data = MarketData()
+    if signal.get("status") != "new":
+        return False
 
-    async with SessionLocal() as db:
-        rows = list((
-            await db.execute(
-                select(Signal).where(
-                    Signal.status.in_(["ACTIVE", "TP1"])
-                )
-            )
-        ).scalars())
+    if signal.get("direction") not in {"BUY", "SELL"}:
+        return False
 
-        for s in rows:
-            try:
-                price = await data.quote(s.symbol)
-            except Exception:
-                continue
+    return signal.get("grade") in {"S", "A"}
 
-            if s.direction == "LONG":
-                if price <= s.sl:
-                    s.status = "CLOSED"
-                    s.result = "SL"
-                elif price >= s.tp2:
-                    s.status = "CLOSED"
-                    s.result = "TP2"
-                elif price >= s.tp1:
-                    s.status = "TP1"
-            else:
-                if price >= s.sl:
-                    s.status = "CLOSED"
-                    s.result = "SL"
-                elif price <= s.tp2:
-                    s.status = "CLOSED"
-                    s.result = "TP2"
-                elif price <= s.tp1:
-                    s.status = "TP1"
 
-            if s.status == "CLOSED":
-                s.closed_at = datetime.now(timezone.utc)
+def filter_signals(
+    signals: list[dict],
+    minimum_grade: str = "B",
+) -> list[dict]:
+    """Filter signals by minimum grade."""
 
-        await db.commit()
+    grade_order = {
+        "S": 4,
+        "A": 3,
+        "B": 2,
+        "C": 1,
+    }
+
+    minimum_grade = minimum_grade.upper()
+
+    if minimum_grade not in grade_order:
+        raise ValueError("Invalid minimum grade")
+
+    filtered = []
+
+    for signal in signals:
+        grade = signal.get("grade")
+
+        if grade not in VALID_GRADES:
+            continue
+
+        if grade_order[grade] >= grade_order[minimum_grade]:
+            filtered.append(signal)
+
+    return filtered
+
+
+def deduplicate_signals(
+    signals: list[dict],
+) -> list[dict]:
+    """Keep only the newest signal for each symbol/timeframe/direction."""
+
+    unique = {}
+
+    for signal in signals:
+        key = (
+            signal.get("symbol"),
+            signal.get("timeframe"),
+            signal.get("direction"),
+            signal.get("strategy"),
+        )
+
+        previous = unique.get(key)
+
+        if previous is None or (
+            signal.get("created_at", "")
+            > previous.get("created_at", "")
+        ):
+            unique[key] = signal
+
+    return list(unique.values())
+    
