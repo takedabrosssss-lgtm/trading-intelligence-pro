@@ -1,3 +1,4 @@
+
 import asyncio
 import logging
 from html import escape
@@ -18,6 +19,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-bot")
 
 router = Router()
+dispatcher = Dispatcher()
+dispatcher.include_router(router)
 
 
 def authorized(message: Message) -> bool:
@@ -30,10 +33,11 @@ def authorized(message: Message) -> bool:
 def mini_app_keyboard():
     if not settings.mini_app_url:
         return None
+
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
-                text="Открыть Trading Intelligence PRO",
+                text="Открыть MIRAGE",
                 web_app=WebAppInfo(url=settings.mini_app_url),
             )
         ]]
@@ -45,8 +49,10 @@ async def start_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
+
     await message.answer(
-        "<b>Trading Intelligence PRO</b>\n\n"
+        "<b>MIRAGE</b>\n"
+        "<i>SEE BEYOND THE MARKET</i>\n\n"
         "Персональная торговая аналитическая система.\n"
         "Режим: Paper Trading.\n\n"
         "Команды:\n"
@@ -64,13 +70,14 @@ async def help_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
+
     await message.answer(
-        "<b>Команды Trading Intelligence PRO</b>\n\n"
+        "<b>MIRAGE — команды</b>\n\n"
         "/start — главное меню\n"
-        "/summary — состояние виртуальных счетов\n"
-        "/signals — последние сохранённые сигналы\n"
-        "/status — состояние бота\n"
-        "/help — эта справка",
+        "/summary — виртуальные счета\n"
+        "/signals — последние сигналы\n"
+        "/status — состояние системы\n"
+        "/help — справка",
         parse_mode="HTML",
     )
 
@@ -80,12 +87,13 @@ async def status_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
+
     await message.answer(
-        "<b>Trading Intelligence PRO</b>\n\n"
+        "<b>MIRAGE</b>\n\n"
         "Telegram Bot: online\n"
         "Режим: Paper Trading\n"
-        "Рыночные данные: Binance Spot / Kraken Spot fallback\n"
-        "Исполнение реальных ордеров: отключено",
+        "Рыночные данные: Binance Spot / Kraken fallback\n"
+        "Реальные ордера: отключены",
         parse_mode="HTML",
     )
 
@@ -95,29 +103,50 @@ async def summary_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
+
     db = SessionLocal()
+
     try:
-        accounts = db.query(PaperAccount).all()
+        accounts = db.query(PaperAccount).order_by(
+            PaperAccount.id.asc()
+        ).all()
+
         if not accounts:
             await message.answer("Виртуальные счета пока не созданы.")
             return
-        total_balance = sum(float(account.balance or 0) for account in accounts)
-        total_initial = sum(float(account.initial_balance or 0) for account in accounts)
+
+        total_balance = sum(
+            float(account.balance or 0)
+            for account in accounts
+        )
+
+        total_initial = sum(
+            float(account.initial_balance or 0)
+            for account in accounts
+        )
+
         pnl = total_balance - total_initial
+
         lines = [
-            "<b>Виртуальный портфель</b>",
+            "<b>MIRAGE · Paper Portfolio</b>",
             "",
             f"Начальный капитал: ${total_initial:,.2f}",
             f"Баланс: ${total_balance:,.2f}",
             f"PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}",
             "",
         ]
+
         for account in accounts:
             lines.append(
                 f"<b>{escape(account.name)}</b>: "
                 f"${float(account.balance or 0):,.2f}"
             )
-        await message.answer("\n".join(lines), parse_mode="HTML")
+
+        await message.answer(
+            "\n".join(lines),
+            parse_mode="HTML",
+        )
+
     finally:
         db.close()
 
@@ -127,30 +156,57 @@ async def signals_command(message: Message):
     if not authorized(message):
         await message.answer("Доступ запрещён.")
         return
+
     db = SessionLocal()
+
     try:
         signals = (
             db.query(Signal)
-            .filter(Signal.status.in_(["new", "eligible", "sent"]))
+            .filter(
+                Signal.status.in_(
+                    ["new", "eligible", "sent"]
+                )
+            )
             .order_by(Signal.id.desc())
             .limit(10)
             .all()
         )
+
         if not signals:
-            await message.answer("Новых подходящих сигналов пока нет.")
+            await message.answer(
+                "Новых подходящих сигналов пока нет."
+            )
             return
-        lines = ["<b>Последние торговые сигналы</b>", ""]
+
+        lines = [
+            "<b>MIRAGE · Последние сигналы</b>",
+            "",
+        ]
+
         for signal in signals:
-            direction = "ПОКУПКА" if signal.direction == "BUY" else "ПРОДАЖА"
+            direction = (
+                "ПОКУПКА"
+                if signal.direction == "BUY"
+                else "ПРОДАЖА"
+            )
+
             lines.extend([
-                f"<b>{escape(signal.symbol)}</b> · {escape(signal.timeframe)}",
+                f"<b>{escape(signal.symbol)}</b> · "
+                f"{escape(signal.timeframe)}",
                 f"Направление: {direction}",
-                f"Оценка: {int(signal.score or 0)}/100 · Grade {escape(signal.grade or '—')}",
+                f"Оценка: {int(signal.score or 0)}/100 · "
+                f"Grade {escape(signal.grade or '—')}",
                 f"Вход: {float(signal.entry_price or 0):,.8g}",
-                f"SL: {float(signal.stop_loss or 0):,.8g} · TP: {float(signal.take_profit or 0):,.8g}",
+                f"SL: {float(signal.stop_loss or 0):,.8g} · "
+                f"TP: {float(signal.take_profit or 0):,.8g}",
                 "",
             ])
-        await message.answer("\n".join(lines), parse_mode="HTML")
+
+        await message.answer(
+            "\n".join(lines),
+            parse_mode="HTML",
+        )
+
     finally:
         db.close()
 
@@ -158,15 +214,18 @@ async def signals_command(message: Message):
 async def run_bot():
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN is not configured")
+
     if not settings.allowed_user_ids:
         raise RuntimeError("OWNER_TELEGRAM_ID is not configured")
+
     bot = Bot(token=settings.bot_token)
-    dispatcher = Dispatcher()
-    dispatcher.include_router(router)
-    logger.info("Trading Intelligence Telegram bot starting")
+
+    logger.info("MIRAGE Telegram bot starting")
+
     try:
         await bot.delete_webhook(drop_pending_updates=False)
         await dispatcher.start_polling(bot)
+
     finally:
         await bot.session.close()
 
@@ -177,3 +236,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
