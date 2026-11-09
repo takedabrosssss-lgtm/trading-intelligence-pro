@@ -619,4 +619,73 @@
     });
   }
 
-  func
+  function bindEvents() {
+    document.addEventListener("click", event => {
+      const marketButton = event.target.closest("[data-select-symbol]");
+      if (marketButton) {
+        state.symbol = marketButton.dataset.selectSymbol;
+        $$(".market-row").forEach(row =>
+          row.classList.toggle("selected", row === marketButton)
+        );
+        loadChart();
+        return;
+      }
+
+      const intervalButton = event.target.closest("[data-interval]");
+      if (intervalButton) {
+        state.interval = intervalButton.dataset.interval;
+        $$(".intervals [data-interval]").forEach(button =>
+          button.classList.toggle("active", button === intervalButton)
+        );
+        loadChart();
+        return;
+      }
+
+      const pageButton = event.target.closest("[data-page]");
+      if (pageButton) {
+        const page = pageButton.dataset.page;
+        setTimeout(() => activatePage(page), 100);
+      }
+    });
+
+    $("#run-analysis")?.addEventListener("click", runAnalysis);
+
+    $("#refresh-btn")?.addEventListener("click", async () => {
+      toast("Обновляем данные…");
+      await refreshAll();
+      if ($("#markets")?.classList.contains("active")) await loadChart();
+    });
+
+    $("#signal-symbol")?.addEventListener("change", () => {});
+    $("#signal-interval")?.addEventListener("change", () => {});
+  }
+
+  function start() {
+    window.Telegram?.WebApp?.ready?.();
+    window.Telegram?.WebApp?.expand?.();
+
+    bindEvents();
+    refreshAll();
+
+    setInterval(() => {
+      loadMarkets().catch(() => {});
+      if ($("#portfolio")?.classList.contains("active")) {
+        loadPortfolio().catch(() => {});
+      }
+    }, 30000);
+
+    window.addEventListener("resize", () => {
+      if (state.chart && $("#price-chart")?.clientWidth) {
+        state.chart.applyOptions({
+          width: $("#price-chart").clientWidth
+        });
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start, { once: true });
+  } else {
+    start();
+  }
+})();
