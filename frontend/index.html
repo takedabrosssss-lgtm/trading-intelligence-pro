@@ -1,12 +1,14 @@
-
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="theme-color" content="#08090b">
-  <meta name="description" content="Trading Intelligence PRO — personal crypto trading terminal">
-  <title>Trading Intelligence PRO</title>
+  <meta name="description" content="QORIX — Elite Quant Intelligence">
+  <meta name="application-name" content="QORIX">
+  <title>QORIX</title>
+  <link rel="icon" type="image/png" href="/qorix-avatar-512.png">
+  <link rel="apple-touch-icon" href="/qorix-avatar-512.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -18,9 +20,14 @@
 <body>
 <div class="app-shell">
   <header class="topbar">
-    <button class="brand" data-page="dashboard" aria-label="На главную">
-      <span class="brand-mark" aria-hidden="true"><span>T</span><i></i></span>
-      <span class="brand-copy"><b>TRADING <em>INTELLIGENCE</em></b><small>PRO TERMINAL</small></span>
+    <button class="brand" data-page="dashboard" aria-label="QORIX — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <img src="/qorix-avatar-512.png" alt="">
+      </span>
+      <span class="brand-copy">
+        <b>QORIX</b>
+        <small>ELITE QUANT INTELLIGENCE</small>
+      </span>
     </button>
     <div class="top-actions">
       <span class="connection"><i></i><span id="connection-label">ПОДКЛЮЧЕНИЕ</span></span>
@@ -29,7 +36,7 @@
   </header>
   <main>
     <section class="page active" id="dashboard">
-      <div class="page-intro"><div><div class="eyebrow">PERSONAL TRADING TERMINAL</div><h1>Обзор рынка</h1><p class="subtle">Ваш торговый центр управления</p></div><span class="live-pill"><i></i> LIVE DATA</span></div>
+      <div class="page-intro"><div><div class="eyebrow">ELITE QUANT INTELLIGENCE</div><h1>QORIX</h1><p class="subtle">Интеллектуальная торговая система</p></div><span class="live-pill"><i></i> LIVE DATA</span></div>
       <article class="hero-card">
         <div class="hero-top"><span class="overline">ОБЩИЙ ВИРТУАЛЬНЫЙ КАПИТАЛ</span><span class="paper-tag">PAPER TRADING</span></div>
         <div class="hero-balance" id="dashboard-balance">$10,000.00</div>
@@ -40,7 +47,7 @@
           <div><span>Equity</span><b id="dashboard-equity">$10,000.00</b></div>
           <div><span>Счета стратегий</span><b id="dashboard-accounts">4</b></div>
         </div>
-        <div class="hero-watermark">TI</div>
+        <div class="hero-watermark">QX</div>
       </article>
       <div class="section-title"><div><span class="eyebrow">MARKET WATCH</span><h2>Рынок сейчас</h2></div><button class="text-btn" data-page="markets">Все рынки <span>↗</span></button></div>
       <div class="market-preview" id="dashboard-markets"><div class="loading-state">Загружаем котировки Binance…</div></div>
@@ -60,7 +67,7 @@
     <section class="page" id="signals">
       <div class="page-intro"><div><div class="eyebrow">TECHNICAL ANALYSIS</div><h1>Сигналы</h1><p class="subtle">Анализ рынка по выбранному активу</p></div><span class="paper-tag">АНАЛИТИКА</span></div>
       <div class="signal-selector"><label for="signal-symbol">Торговая пара</label><select id="signal-symbol"><option>BTCUSDT</option><option>ETHUSDT</option><option>BNBUSDT</option><option>SOLUSDT</option><option>XRPUSDT</option><option>ADAUSDT</option></select><label for="signal-interval">Таймфрейм</label><select id="signal-interval"><option value="15m">15 минут</option><option value="1h" selected>1 час</option><option value="4h">4 часа</option><option value="1d">1 день</option></select><button class="primary-btn" id="run-analysis">Запустить анализ <span>→</span></button></div>
-      <div id="analysis-result" class="analysis-placeholder"><div class="placeholder-mark">TI</div><b>Готов к анализу</b><p>Выберите пару и таймфрейм. Результат будет рассчитан по актуальным свечам Binance.</p></div>
+      <div id="analysis-result" class="analysis-placeholder"><div class="placeholder-mark">QX</div><b>Готов к анализу</b><p>Выберите пару и таймфрейм. Результат будет рассчитан по актуальным свечам Binance.</p></div>
       <p class="disclaimer">Оценка технических индикаторов не является вероятностью прибыли или гарантией результата. Это аналитическая информация, не торговая рекомендация.</p>
     </section>
     <section class="page" id="strategies">
@@ -95,5 +102,6 @@
 <script src="obsidian-fix.js"></script>
 <script src="dashboard-polish.js"></script>
 <script src="premium-dashboard.js"></script>
+<script src="branding.js"></script>
 </body>
 </html>
