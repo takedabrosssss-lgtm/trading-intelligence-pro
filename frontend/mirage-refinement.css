@@ -1,0 +1,111 @@
+/* MIRAGE 3.1 — REFINED MOTION + GLASS FINISH */
+:root { --mr-glass-stealth: rgba(10,24,17,.78); --mr-glass-spectre: rgba(18,13,32,.80); }
+
+#mirage-transition {
+  z-index:999999!important; overflow:hidden!important; isolation:isolate;
+  background:radial-gradient(ellipse at 50% 45%,rgba(16,22,24,.92),rgba(2,4,7,.995) 68%)!important;
+  pointer-events:none!important; will-change:opacity;
+}
+#mirage-transition.to-spectre {
+  background:radial-gradient(ellipse at 50% 45%,rgba(23,16,43,.94),rgba(3,2,9,.995) 70%)!important;
+}
+#mirage-transition::before {
+  content:""; position:absolute; z-index:0; width:min(118vw,900px); aspect-ratio:1;
+  border-radius:50%; left:50%; top:50%; transform:translate(-50%,-50%) scale(.08);
+  background:radial-gradient(circle at 34% 27%,rgba(255,255,255,.12),transparent 14%),radial-gradient(circle at 50% 50%,#050a09 0 42%,#101b19 53%,#020404 69%);
+  box-shadow:0 0 0 2px rgba(175,237,208,.18),0 0 55px 18px rgba(78,221,159,.14),0 0 0 30px rgba(255,255,255,.018),0 0 0 68px rgba(255,255,255,.012);
+  opacity:.92; pointer-events:none;
+}
+#mirage-transition.to-spectre::before {
+  background:radial-gradient(circle at 34% 27%,rgba(255,255,255,.14),transparent 14%),radial-gradient(circle at 50% 50%,#090612 0 42%,#211638 53%,#03020a 69%);
+  box-shadow:0 0 0 2px rgba(204,180,255,.22),0 0 65px 20px rgba(156,119,245,.19),0 0 0 30px rgba(255,255,255,.02),0 0 0 68px rgba(255,255,255,.014);
+}
+#mirage-transition::after {
+  content:""; position:absolute; z-index:1; width:min(145vw,1100px); aspect-ratio:1;
+  left:50%; top:50%; transform:translate(-50%,-50%) rotate(-18deg) scale(.32);
+  border:1px solid rgba(177,236,209,.23); border-radius:50%;
+  box-shadow:0 0 0 18px rgba(255,255,255,.012),0 0 0 54px rgba(177,236,209,.035),0 0 0 105px rgba(255,255,255,.012);
+  pointer-events:none;
+}
+#mirage-transition.to-spectre::after {
+  border-color:rgba(202,179,255,.28);
+  box-shadow:0 0 0 18px rgba(255,255,255,.012),0 0 0 54px rgba(185,151,255,.045),0 0 0 105px rgba(255,255,255,.014);
+}
+#mirage-transition.is-active::before { animation:mirage-eclipse-core 2.65s cubic-bezier(.16,1,.3,1) both; }
+#mirage-transition.is-active::after { animation:mirage-eclipse-ring 2.65s cubic-bezier(.16,1,.3,1) both; }
+@keyframes mirage-eclipse-core {
+  0%{transform:translate(-50%,-50%) scale(.08) rotate(-28deg);opacity:0}
+  28%{transform:translate(-50%,-50%) scale(.78) rotate(0);opacity:1}
+  72%{transform:translate(-50%,-50%) scale(1.02) rotate(12deg);opacity:1}
+  100%{transform:translate(-50%,-50%) scale(1.16) rotate(20deg);opacity:0}
+}
+@keyframes mirage-eclipse-ring {
+  0%{transform:translate(-50%,-50%) rotate(-28deg) scale(.28);opacity:0}
+  32%{transform:translate(-50%,-50%) rotate(8deg) scale(.9);opacity:.9}
+  70%{transform:translate(-50%,-50%) rotate(48deg) scale(1.05);opacity:.72}
+  100%{transform:translate(-50%,-50%) rotate(76deg) scale(1.22);opacity:0}
+}
+.mirage-transition-card{z-index:3!important;gap:19px!important}
+.mirage-transition-mark{width:126px!important;height:126px!important;border-radius:36px!important;background:rgba(10,22,18,.88)!important;box-shadow:0 0 85px rgba(75,226,160,.23),inset 0 1px rgba(255,255,255,.18)!important}
+.mirage-transition.to-spectre .mirage-transition-mark{background:rgba(22,14,39,.9)!important;box-shadow:0 0 90px rgba(167,139,255,.28),inset 0 1px rgba(255,255,255,.18)!important}
+.mirage-transition-title{font-size:13px!important;letter-spacing:4.5px!important;text-shadow:0 0 25px rgba(255,255,255,.22)}
+.mirage-transition-caption{letter-spacing:2.4px!important}
+
+/* Faster-feeling tab changes: no per-page blur/filter repaint. */
+.page.active{animation:mirage-tab-arrive .28s cubic-bezier(.2,.75,.25,1) both!important;filter:none!important;will-change:opacity,transform}
+@keyframes mirage-tab-arrive{0%{opacity:.72;transform:translate3d(0,7px,0) scale(.997)}100%{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+.page:not(.active){animation:none!important}
+.bottom-nav .nav-item{transition:color .2s ease,background .25s ease,border-color .25s ease,transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s ease!important;-webkit-tap-highlight-color:transparent}
+.bottom-nav .nav-item:active{transform:translateY(1px) scale(.96)!important}
+.bottom-nav .nav-item.active span svg{animation:mirage-nav-symbol .42s cubic-bezier(.16,1,.3,1) both}
+@keyframes mirage-nav-symbol{0%{transform:translateY(4px) scale(.78);opacity:.45}70%{transform:translateY(-1px) scale(1.08);opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}
+
+/* Glass panels, retaining enough contrast for figures and labels. */
+.hero-card,.portfolio-total,.strategy-summary,.chart-panel,.analysis-card,.analysis-placeholder,.strategy-card,.position-card,.account-row,.history-row,.status-card,.mini-market,.market-row,.stat-box,.risk-note,.premium-kpi,#premium-equity,#premium-positions,#premium-activity,.signal-selector,.mirage-dashboard-lab>section,.mirage-feed-markets,.mirage-feed-status{
+  background-color:color-mix(in srgb,var(--mw-panel) 78%,transparent)!important;
+  -webkit-backdrop-filter:blur(9px) saturate(125%);backdrop-filter:blur(9px) saturate(125%);
+  border-color:color-mix(in srgb,var(--mw-line) 78%,transparent)!important;
+}
+body[data-mirage-mode="stealth"] .hero-card,body[data-mirage-mode="stealth"] .premium-kpi,body[data-mirage-mode="stealth"] #premium-equity,body[data-mirage-mode="stealth"] #premium-positions,body[data-mirage-mode="stealth"] #premium-activity,body[data-mirage-mode="stealth"] .strategy-card,body[data-mirage-mode="stealth"] .mi-panel{background-color:rgba(9,27,18,.76)!important}
+body[data-mirage-mode="spectre"] .hero-card,body[data-mirage-mode="spectre"] .premium-kpi,body[data-mirage-mode="spectre"] #premium-equity,body[data-mirage-mode="spectre"] #premium-positions,body[data-mirage-mode="spectre"] #premium-activity,body[data-mirage-mode="spectre"] .strategy-card,body[data-mirage-mode="spectre"] .mi-panel{background-color:rgba(19,13,34,.78)!important}
+
+/* Color-coded KPI symbols: emerald wallet, sapphire performance, warm gold win-rate. */
+#premium-kpis .premium-kpi{position:relative;overflow:hidden}
+#premium-kpis .premium-kpi::after{content:"";position:absolute;width:82px;height:82px;right:-28px;top:-30px;border-radius:50%;opacity:.18;pointer-events:none}
+#premium-kpis .premium-kpi:nth-child(1) .kpi-icon{color:#9cf6d0!important;background:linear-gradient(145deg,rgba(30,190,132,.30),rgba(12,91,68,.18))!important;border:1px solid rgba(105,236,184,.34);box-shadow:0 5px 20px rgba(39,205,145,.12),inset 0 1px rgba(255,255,255,.13)}
+#premium-kpis .premium-kpi:nth-child(1)::after{background:#38dfa5}
+#premium-kpis .premium-kpi:nth-child(2) .kpi-icon{color:#a9d9ff!important;background:linear-gradient(145deg,rgba(55,145,235,.30),rgba(40,79,164,.18))!important;border:1px solid rgba(130,190,255,.34);box-shadow:0 5px 20px rgba(62,143,235,.13),inset 0 1px rgba(255,255,255,.13)}
+#premium-kpis .premium-kpi:nth-child(2)::after{background:#58a9ff}
+#premium-kpis .premium-kpi:nth-child(3) .kpi-icon{color:#ffe0a0!important;background:linear-gradient(145deg,rgba(225,163,63,.30),rgba(157,97,34,.18))!important;border:1px solid rgba(255,207,119,.36);box-shadow:0 5px 20px rgba(220,157,58,.13),inset 0 1px rgba(255,255,255,.13)}
+#premium-kpis .premium-kpi:nth-child(3)::after{background:#f2bd62}
+.kpi-icon svg{width:19px!important;height:19px!important;stroke:currentColor!important;stroke-width:1.8!important;filter:drop-shadow(0 2px 5px currentColor)}
+
+/* Research Studio and Robustness Engine follow the selected theme. */
+.mi-panel{--mi-green:var(--mw-accent-2)!important;--mi-muted:var(--mw-muted)!important;color:var(--mw-text)!important;border:1px solid var(--mw-line)!important;background:radial-gradient(ellipse at 0 0,var(--mw-accent-soft),transparent 50%),color-mix(in srgb,var(--mw-panel) 78%,transparent)!important;box-shadow:var(--mw-shadow)!important;-webkit-backdrop-filter:blur(10px) saturate(125%)!important;backdrop-filter:blur(10px) saturate(125%)!important}
+.mi-panel h3,.mi-panel .mi-result-head b,.mi-panel .mi-status-title,.mi-panel .mi-folds b{color:var(--mw-text)!important}
+.mi-panel .mi-kicker,.mi-panel .mi-rank{color:var(--mw-accent-2)!important}
+.mi-panel .mi-sub,.mi-panel .mi-foot,.mi-panel .mi-result,.mi-panel .mi-folds div{color:var(--mw-muted)!important}
+.mi-panel .mi-emblem{color:var(--mw-accent-2)!important;border-color:var(--mw-line)!important;background:linear-gradient(145deg,var(--mw-accent-soft),color-mix(in srgb,var(--mw-panel-2) 80%,transparent))!important;box-shadow:0 0 24px var(--mw-accent-soft)!important}
+.mi-panel .mi-paper{color:var(--mw-accent-2)!important;border-color:var(--mw-line)!important;background:var(--mw-accent-soft)!important}
+.mi-panel .mi-stat,.mi-panel .mi-status,.mi-panel .mi-folds,.mi-panel .mi-table-wrap{color:var(--mw-text)!important;border-color:var(--mw-line)!important;background:color-mix(in srgb,var(--mw-panel-2) 74%,transparent)!important}
+.mi-panel .mi-stat small,.mi-panel .mi-table th,.mi-panel .mi-result-head span{color:var(--mw-muted)!important}
+.mi-panel .mi-stat b,.mi-panel .mi-table td{color:var(--mw-text)!important}
+.mi-panel .mi-controls select{color:var(--mw-text)!important;border-color:var(--mw-line)!important;background:var(--mw-bg-2)!important}
+.mi-panel .mi-actions button{color:var(--mw-text)!important;border-color:var(--mw-line)!important;background:color-mix(in srgb,var(--mw-panel-2) 86%,transparent)!important}
+.mi-panel .mi-actions .mi-primary{color:#07130d!important;border-color:var(--mw-accent)!important;background:linear-gradient(120deg,var(--mw-accent-2),var(--mw-accent))!important;box-shadow:0 7px 22px var(--mw-accent-soft)!important}
+body[data-mirage-mode="spectre"] .mi-panel .mi-actions .mi-primary{color:#10091e!important;border-color:#c9b5ff!important;background:linear-gradient(120deg,#e4d8ff,#a98aff)!important;box-shadow:0 7px 24px rgba(167,139,255,.20)!important}
+.mi-panel .mi-table th,.mi-panel .mi-table td{border-color:var(--mw-line)!important}
+.mi-panel .mi-progress{background:var(--mw-accent-soft)!important}
+.mi-panel .mi-progress::after{background:linear-gradient(90deg,var(--mw-accent),var(--mw-accent-2))!important}
+.mi-panel .mi-spinner{border-color:var(--mw-line)!important;border-top-color:var(--mw-accent-2)!important}
+.mi-panel .mi-pulse{background:var(--mw-accent)!important;box-shadow:0 0 10px var(--mw-accent)!important}
+.mi-panel .mi-warning{border-left-color:#d5ad6d!important}
+
+@media(max-width:600px){
+ .mirage-transition-mark{width:108px!important;height:108px!important}
+ .mi-panel,.hero-card,.premium-kpi,#premium-equity,#premium-positions,#premium-activity,.strategy-card{ -webkit-backdrop-filter:none!important;backdrop-filter:none!important }
+}
+@media(prefers-reduced-motion:reduce){
+ .page.active{animation-duration:.12s!important}
+ #mirage-transition.is-active::before,#mirage-transition.is-active::after{animation-duration:.65s!important}
+}
