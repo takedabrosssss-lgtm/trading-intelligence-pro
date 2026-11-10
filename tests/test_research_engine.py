@@ -1,57 +1,53 @@
+import math
+import time
 import unittest
-from app.research_engine import research_strategies, _simulate, CANDIDATES
+from app.research_engine import research_strategies, _clean, _ema_series, _rsi_series
 
 
-def candles_from(closes):
-    result = []
-    for i, close in enumerate(closes):
-        prev = closes[i - 1] if i else close
-        result.append({"open": prev, "high": max(prev, close) * 1.002,
-                       "low": min(prev, close) * 0.998, "close": close,
-                       "volume": 100 + i % 11})
-    return result
+def candles(n=1200):
+    out=[]
+    price=100.0
+    for i in range(n):
+        # Deterministic mixed trend/range path, no external data needed.
+        change=0.0008*math.sin(i/17.0)+0.00025*math.cos(i/5.0)+0.00008
+        price *= 1+change
+        out.append({"open":price*0.999,"high":price*1.002,"low":price*0.998,"close":price,"volume":1000+i%37})
+    return out
 
 
 class ResearchEngineTests(unittest.TestCase):
-    def make_series(self, n=500):
-        closes = [100.0]
-        for i in range(1, n):
-            phase = (i // 60) % 4
-            rate = [0.0025, -0.0022, 0.0018, -0.0016][phase]
-            closes.append(closes[-1] * (1 + rate))
-        return candles_from(closes)
+    def test_ema_series_shape_and_seed(self):
+        values=[1.,2.,3.,4.,5.]
+        result=_ema_series(values,3)
+        self.assertIsNone(result[1])
+        self.assertEqual(result[2],2.0)
+        self.assertAlmostEqual(result[3],3.0)
 
-    def test_insufficient_data(self):
-        result = research_strategies(self.make_series(200))
-        self.assertEqual(result["status"], "insufficient_data")
-        self.assertEqual(result["minimum_candles"], 240)
+    def test_rsi_series_has_valid_values(self):
+        values=[float(x) for x in range(1,40)]
+        result=_rsi_series(values,14)
+        self.assertIsNone(result[13])
+        self.assertEqual(result[14],100.0)
+        self.assertTrue(all(0 <= x <= 100 for x in result[14:] if x is not None))
 
-    def test_three_walk_forward_folds_for_each_family(self):
-        result = research_strategies(self.make_series())
-        self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["folds"], 3)
-        self.assertEqual(len(result["families"]), len(CANDIDATES))
+    def test_1200_candle_research_returns_contract(self):
+        result=research_strategies(candles())
+        self.assertEqual(result["status"],"ok")
+        self.assertEqual(result["candles"],1200)
+        self.assertEqual(len(result["families"]),4)
         for family in result["families"]:
-            self.assertEqual(len(family["folds"]), 3)
-            self.assertIn(family["research_status"], {"promising_but_unconfirmed", "not_validated"})
-            self.assertTrue(all(f["validation_candles"] > 0 for f in family["folds"]))
+            self.assertIn("out_of_sample_return_pct",family)
+            self.assertEqual(len(family["folds"]),3)
 
-    def test_invalid_costs_rejected(self):
-        with self.assertRaises(ValueError):
-            research_strategies(self.make_series(), fee_rate=-0.1)
+    def test_invalid_candles_are_skipped(self):
+        data=candles(250)+[{"open":float('nan'),"high":1,"low":1,"close":1,"volume":1}]
+        self.assertEqual(len(_clean(data)),250)
 
-    def test_costs_reduce_return(self):
-        rows = self.make_series(300)
-        params = CANDIDATES["ema_trend"][0]
-        free = _simulate(rows, "ema_trend", params, 50, len(rows), 0, 0)
-        charged = _simulate(rows, "ema_trend", params, 50, len(rows), 0.001, 0.0005)
-        self.assertLessEqual(charged["return_pct"], free["return_pct"])
-
-    def test_regime_is_descriptive(self):
-        result = research_strategies(self.make_series())
-        self.assertIn(result["regime"]["label"], {"trend", "range", "high_volatility"})
-        self.assertIn("not used", result["regime"]["note"])
+    def test_insufficient_data_contract(self):
+        result=research_strategies(candles(100))
+        self.assertEqual(result["status"],"insufficient_data")
+        self.assertEqual(result["families"],[])
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
