@@ -62,13 +62,10 @@
 
     const brandSigil = $(".mirage-brand-sigil");
     if (brandSigil) brandSigil.innerHTML = svg[mode];
-
     const sigil = $(".mirage-mode-sigil");
     if (sigil) sigil.innerHTML = svg[mode];
-
     const title = $(".mirage-mode-copy strong");
     if (title) title.textContent = name;
-
     const sub = $(".mirage-mode-copy small");
     if (sub) sub.textContent = caption;
 
@@ -103,7 +100,6 @@
     const layer = ensureTransitionLayer();
     const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const duration = reduced ? 360 : 980;
-
     layer.classList.toggle("to-spectre", next === "spectre");
     layer.classList.add("is-active");
     layer.style.opacity = "0";
@@ -217,7 +213,6 @@
       const hero = $(".hero-card", dashboard);
       const kpis = $("#premium-kpis");
       wrapElements(dashboard, "mirage-dashboard-core", [hero, kpis]);
-
       const lab = [$("#premium-equity"), $("#premium-positions"), $("#premium-activity")];
       wrapElements(dashboard, "mirage-dashboard-lab", lab);
 
@@ -290,46 +285,38 @@
       const span = $("span", button);
       if (span) replaceContents(span, navIcons[button.dataset.page] || "activity");
     });
-
     $$(".status-card", root).forEach(card => {
       const title = ($("b", card)?.textContent || "").toLowerCase();
       const iconEl = $(".status-icon", card);
       if (iconEl) replaceContents(iconEl, title.includes("binance") ? "chart" : "shield");
     });
-
     $$(".kpi-icon", root).forEach(el => {
       const label = ($(".kpi-label", el.parentElement)?.textContent || "").toLowerCase();
       const iconName = label.includes("p&l") ? "chart" : label.includes("win") ? "trophy" : "wallet";
       replaceContents(el, iconName);
     });
-
     $$(".premium-section-title i", root).forEach(el => {
       const text = (el.parentElement?.textContent || "").toLowerCase();
       replaceContents(el, text.includes("пози") ? "layers" : "activity");
     });
-
     $$(".strategy-symbol", root).forEach(el => replaceContents(el, "layers"));
     $$(".risk-note > span", root).forEach(el => replaceContents(el, "shield"));
-
     $$(".placeholder-mark", root).forEach(el => {
       if (el.dataset.mirageIcon === "sigil") return;
       el.innerHTML = svg[mode];
       el.dataset.mirageIcon = "sigil";
     });
-
     $$(".premium-equity-head b", root).forEach(el => {
       if (el.dataset.mirageIcon === "chart") return;
       const label = (el.textContent || "").replace(/^[↗⇧↑]\s*/, "").trim() || "График капитала";
       el.innerHTML = `${svg.chartUp}<span>${label}</span>`;
       el.dataset.mirageIcon = "chart";
     });
-
     $$(".text-btn span", root).forEach(el => {
       if (el.dataset.mirageIcon === "arrow") return;
       el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M8 5h11v11"/></svg>`;
       el.dataset.mirageIcon = "arrow";
     });
-
     const refresh = $("#refresh-btn");
     if (refresh && refresh.dataset.mirageIcon !== "refresh") {
       refresh.innerHTML = svg.refresh;
@@ -416,6 +403,8 @@
     window.MIRAGE_MODES = {
       get current() { return mode; },
       set: next => setMode(next, true),
+      // Atomic mode update for MIRAGE 3.5 cinematic transition.
+      setImmediate: next => setMode(next, false),
       symbols: { stealth: svg.stealth, spectre: svg.spectre }
     };
   }
