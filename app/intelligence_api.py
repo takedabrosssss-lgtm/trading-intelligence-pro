@@ -4,6 +4,7 @@ from app.database import SessionLocal, PaperAccount, Position, Trade
 from app.market_data import market_data
 from app.intelligence import analyze_market, backtest
 from app.strategy_lab import compare_strategies
+from app.research_engine import research_strategies
 
 
 def build_router(require_user):
@@ -67,5 +68,18 @@ def build_router(require_user):
             raise HTTPException(400, str(exc)) from exc
         except Exception as exc:
             raise HTTPException(502, "Strategy comparison data temporarily unavailable") from exc
+
+    @router.get("/research/{symbol}")
+    async def research_market_strategies(symbol: str, interval: str = Query("1d"), user=Depends(require_user)):
+        symbol = symbol.upper()
+        if not symbol.endswith("USDT") or interval not in {"1h", "4h", "1d"}:
+            raise HTTPException(400, "Unsupported symbol or interval")
+        try:
+            candles = await market_data.get_klines(symbol, interval, 500)
+            return {"symbol": symbol, "interval": interval, **research_strategies(candles)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(502, "Walk-forward research temporarily unavailable") from exc
 
     return router
