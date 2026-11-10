@@ -5,6 +5,10 @@ from app.market_data import market_data
 from app.intelligence import analyze_market, backtest
 from app.strategy_lab import compare_strategies
 from app.research_engine import research_strategies
+from app.cross_asset_research import aggregate_cross_asset
+
+
+CROSS_ASSET_SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
 
 
 def build_router(require_user):
@@ -81,5 +85,20 @@ def build_router(require_user):
             raise HTTPException(400, str(exc)) from exc
         except Exception as exc:
             raise HTTPException(502, "Walk-forward research temporarily unavailable") from exc
+
+    @router.get("/research-universe")
+    async def research_universe(interval: str = Query("1d"), user=Depends(require_user)):
+        if interval not in {"1h", "4h", "1d"}:
+            raise HTTPException(400, "Unsupported interval")
+        # Sequential requests intentionally limit load and avoid burst rate limits on Render Free.
+        results = []
+        for symbol in CROSS_ASSET_SYMBOLS:
+            try:
+                candles = await market_data.get_klines(symbol, interval, 500)
+                results.append({"symbol": symbol, **research_strategies(candles)})
+            except Exception:
+                results.append({"symbol": symbol, "status": "unavailable", "families": []})
+        summary = aggregate_cross_asset(results, CROSS_ASSET_SYMBOLS)
+        return {"interval": interval, **summary}
 
     return router
