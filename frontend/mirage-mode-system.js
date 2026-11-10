@@ -1,708 +1,1297 @@
 
 /* =========================================================
-   MIRAGE 2.7.1 — MODE SYSTEM
-   STEALTH / SPECTRE
-   Только интерфейс. Торговая логика не меняется.
+   MIRAGE 2.8 — DUAL INTERFACE SYSTEM
+   STEALTH MODE / SPECTRE MODE
+
+   Full UI redesign across all five application tabs.
+   Presentation only: no changes to trading logic or API.
    ========================================================= */
 
 (() => {
   "use strict";
 
-  if (window.__MIRAGE_MODE_SYSTEM__) return;
-  window.__MIRAGE_MODE_SYSTEM__ = true;
+  if (window.__MIRAGE_DUAL_INTERFACE_V28__) return;
+  window.__MIRAGE_DUAL_INTERFACE_V28__ = true;
 
   const STORAGE_KEY = "mirage-mode-v1";
+  const $ = (selector, root = document) =>
+    root.querySelector(selector);
+
+  const $$ = (selector, root = document) =>
+    [...root.querySelectorAll(selector)];
 
   const MODES = {
     stealth: "STEALTH MODE",
     spectre: "SPECTRE MODE"
   };
 
-  const $ = (selector, root = document) =>
-    root.querySelector(selector);
-
-  let currentMode = "stealth";
-  let switching = false;
+  let mode = "stealth";
+  let switchLocked = false;
+  let observer = null;
 
   try {
-    currentMode =
-      localStorage.getItem(STORAGE_KEY) === "spectre"
-        ? "spectre"
-        : "stealth";
+    mode = localStorage.getItem(STORAGE_KEY) === "spectre"
+      ? "spectre"
+      : "stealth";
   } catch (_) {}
 
-  /* Фирменный призрак */
+  /* =====================================================
+     1. GLOBAL DESIGN SYSTEM
+     ===================================================== */
 
-  const stealthArt = `
-    <svg viewBox="0 0 120 132" aria-hidden="true">
-      <defs>
-        <linearGradient id="mirageGhostGradient"
-          x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#effff8"/>
-          <stop offset="100%" stop-color="#63dcae"/>
-        </linearGradient>
-      </defs>
-      <path d="M60 9C33 9 17 29 17 57v58c0 4 4 6 8 3l13-10 12 11c3 3 6 3 9 0l12-11 12 10c4 3 8 1 8-4V57C91 29 80 9 60 9Z"
-        fill="url(#mirageGhostGradient)"/>
-      <ellipse cx="45" cy="55" rx="5" ry="8" fill="#10251e"/>
-      <ellipse cx="72" cy="55" rx="5" ry="8" fill="#10251e"/>
-      <path d="M52 73q8 7 16 0" fill="none"
-        stroke="#10251e" stroke-width="3"
-        stroke-linecap="round"/>
-    </svg>`;
+  const css = `
 
-  /* Эмблема SPECTRE */
-
-  const spectreArt = `
-    <svg viewBox="0 0 140 140" aria-hidden="true">
-      <defs>
-        <linearGradient id="mirageSpectreGradient"
-          x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#d7fff4"/>
-          <stop offset="50%" stop-color="#4be0b1"/>
-          <stop offset="100%" stop-color="#163b36"/>
-        </linearGradient>
-        <filter id="mirageSpectreGlow">
-          <feGaussianBlur stdDeviation="4" result="blur"/>
-          <feMerge>
-            <feMergeNode in="blur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-      </defs>
-
-      <path d="M70 9 119 37v57l-49 28-49-28V37Z"
-        fill="none" stroke="#48d9ad" stroke-opacity=".4"/>
-
-      <path d="M70 19 109 42v46l-39 23-39-23V42Z"
-        fill="url(#mirageSpectreGradient)"
-        fill-opacity=".12"
-        stroke="#75f3ca" stroke-width="1.5"/>
-
-      <path d="M70 28 96 43v31L70 89 44 74V43Z"
-        fill="#071410" stroke="#71f1c8"
-        stroke-width="1.7" filter="url(#mirageSpectreGlow)"/>
-
-      <path d="m50 57 14-8 6 5 6-5 14 8-7 18-13 8-13-8Z"
-        fill="url(#mirageSpectreGradient)"/>
-
-      <path d="m59 62 7-3m8 0 7 3"
-        stroke="#03100d" stroke-width="3"
-        stroke-linecap="round"/>
-
-      <circle cx="70" cy="8" r="3" fill="#8dffdc"/>
-      <circle cx="70" cy="119" r="3" fill="#8dffdc"/>
-    </svg>`;
-
-  /* Стили */
-
-  const styles = `
-
-    /* Верхняя панель режимов */
-
-    .mode-toolbar {
-      position:relative;
-      z-index:19;
-      width:100%;
-      max-width:760px;
-      min-height:48px;
-      margin:0 auto;
-      padding:7px 22px 0;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      box-sizing:border-box;
+    :root {
+      --mirage-bg: #050907;
+      --mirage-panel: #0b120f;
+      --mirage-panel-2: #101a15;
+      --mirage-line: rgba(129, 210, 172, .13);
+      --mirage-green: #48e5a9;
+      --mirage-green-soft: #9affd5;
+      --mirage-red: #ff6375;
+      --mirage-text: #edf7f1;
+      --mirage-muted: #82958a;
+      --mirage-radius: 20px;
     }
 
-    .mode-status-slot {
-      min-width:0;
-      display:flex;
-      align-items:center;
+    html {
+      background: var(--mirage-bg) !important;
     }
 
-    .mode-status-slot .connection {
-      margin:0;
+    body {
+      background:
+        radial-gradient(
+          ellipse at 50% -18%,
+          rgba(31, 115, 80, .16),
+          transparent 47%
+        ),
+        radial-gradient(
+          ellipse at 100% 55%,
+          rgba(17, 70, 49, .08),
+          transparent 38%
+        ),
+        #050907 !important;
+      color: var(--mirage-text) !important;
+      transition: background .4s ease, color .4s ease;
     }
 
-    .mode-switch {
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:8px;
-      min-height:36px;
-      padding:7px 12px;
-      border:1px solid rgba(255,255,255,.15);
-      border-radius:999px;
-      background:rgba(12,17,15,.9);
-      color:#effff8;
-      font:800 9px/1 "Manrope",sans-serif;
-      letter-spacing:.09em;
-      white-space:nowrap;
-      cursor:pointer;
-      backdrop-filter:blur(14px);
-      transition:all .3s ease;
+    .app-shell {
+      max-width: 900px !important;
+      overflow-x: clip !important;
+      padding-bottom: 116px !important;
     }
 
-    .mode-switch:active {
-      transform:scale(.96);
+    main {
+      padding-top: 17px !important;
     }
 
-    .mode-switch-led {
-      width:7px;
-      height:7px;
-      flex:0 0 7px;
-      border-radius:50%;
-      background:#43d9a5;
-      box-shadow:0 0 11px #43d9a5;
+    /* =================================================
+       2. TOP BAR — BRAND + REAL CONNECTION INDICATOR
+       ================================================= */
+
+    .topbar {
+      height: 72px !important;
+      min-height: 72px !important;
+      padding: 0 19px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 12px !important;
+      background: rgba(4, 10, 7, .94) !important;
+      border-bottom: 1px solid rgba(109, 215, 167, .11) !important;
+      backdrop-filter: blur(24px) !important;
+      -webkit-backdrop-filter: blur(24px) !important;
+      z-index: 100 !important;
     }
 
-    .mode-switch-arrow {
-      opacity:.55;
-      font-size:13px;
+    .brand {
+      min-width: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 11px !important;
+      background: transparent !important;
+      border: 0 !important;
     }
 
-    /* Переход между режимами */
-
-    .mode-transition {
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      display:grid;
-      place-items:center;
-      background:#020605;
-      opacity:0;
-      visibility:hidden;
-      pointer-events:none;
-      transition:opacity .48s ease,visibility .48s ease;
+    .brand-mark {
+      width: 42px !important;
+      height: 42px !important;
+      flex: 0 0 42px !important;
+      border-radius: 13px !important;
+      overflow: hidden !important;
+      border: 1px solid rgba(83, 230, 174, .35) !important;
+      background: #07110c !important;
+      box-shadow:
+        0 0 22px rgba(49, 216, 151, .13),
+        inset 0 1px 0 rgba(255, 255, 255, .12) !important;
     }
 
-    .mode-transition.active {
-      opacity:1;
-      visibility:visible;
+    .brand-mark img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
     }
 
-    .mode-transition-content {
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap:13px;
-      opacity:0;
-      transform:translateY(12px) scale(.92);
-      transition:all .65s cubic-bezier(.22,.8,.22,1);
+    .brand-copy {
+      min-width: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 4px !important;
     }
 
-    .mode-transition.active .mode-transition-content {
-      opacity:1;
-      transform:translateY(0) scale(1);
+    .brand-copy b {
+      color: #f2fff8 !important;
+      font: 800 13px/1 "Manrope", sans-serif !important;
+      letter-spacing: 2.7px !important;
     }
 
-    .mode-transition-art {
-      width:118px;
-      height:118px;
-      filter:drop-shadow(0 0 24px rgba(67,217,165,.3));
-      animation:mirage-float 2.7s ease-in-out infinite;
+    .brand-copy small {
+      color: #77988a !important;
+      font: 600 7px/1.2 "DM Sans", sans-serif !important;
+      letter-spacing: 1.35px !important;
+      white-space: nowrap !important;
     }
 
-    .mode-transition-art svg {
-      width:100%;
-      height:100%;
+    /* Old text status is retained internally because app.js
+       updates it. Visually it is replaced by our brand LED. */
+
+    .top-actions .connection {
+      display: none !important;
     }
 
-    .mode-transition-title {
-      color:#eafff5;
-      font:800 13px Manrope,sans-serif;
-      letter-spacing:.23em;
+    .mirage-brand-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 15px;
     }
 
-    .mode-transition-caption {
-      color:#8ca79b;
-      font:500 9px "DM Sans",sans-serif;
-      letter-spacing:.16em;
+    .mirage-system-led {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 8px;
+      border-radius: 50%;
+      background: #69766e;
+      box-shadow: 0 0 0 transparent;
+      transition: background .25s ease, box-shadow .25s ease;
     }
 
-    .mode-transition-line {
-      width:120px;
-      height:1px;
-      background:linear-gradient(
-        90deg,transparent,#45d9a6,transparent
-      );
-      animation:mirage-line 1s ease infinite alternate;
+    .mirage-system-led.online {
+      background: #3fe4a2;
+      box-shadow:
+        0 0 7px rgba(63, 228, 162, .9),
+        0 0 17px rgba(63, 228, 162, .35);
+      animation: mirage-led-pulse 2.4s ease-in-out infinite;
     }
 
-    /* Иллюстрации режима */
-
-    .mode-identity {
-      position:absolute;
-      z-index:0;
-      right:76px;
-      top:5px;
-      width:43px;
-      height:48px;
-      opacity:.48;
-      pointer-events:none;
-      filter:drop-shadow(0 0 15px rgba(67,217,165,.25));
-      animation:mirage-float 5s ease-in-out infinite;
+    .mirage-system-led.offline {
+      background: #ff5368;
+      box-shadow:
+        0 0 7px rgba(255, 83, 104, .85),
+        0 0 16px rgba(255, 83, 104, .3);
     }
 
-    .mode-identity svg {
-      width:100%;
-      height:100%;
+    @keyframes mirage-led-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .58; }
     }
+
+    #refresh-btn {
+      width: 39px !important;
+      height: 39px !important;
+      border: 1px solid rgba(106, 215, 168, .19) !important;
+      border-radius: 13px !important;
+      background: rgba(15, 30, 22, .9) !important;
+      color: #8ff2c5 !important;
+      font-size: 22px !important;
+    }
+
+    /* =================================================
+       3. GLOBAL MODE SWITCH
+       ================================================= */
+
+    .mirage-mode-toolbar {
+      position: relative;
+      z-index: 80;
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 13px 19px 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      box-sizing: border-box;
+      border-bottom: 1px solid rgba(113, 211, 165, .09);
+      background:
+        linear-gradient(
+          90deg,
+          rgba(5, 15, 10, .96),
+          rgba(8, 21, 14, .86),
+          rgba(5, 15, 10, .96)
+        );
+    }
+
+    .mirage-mode-caption {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .mirage-mode-caption strong {
+      color: #dff9ec;
+      font: 800 9px/1 "Manrope", sans-serif;
+      letter-spacing: 2px;
+    }
+
+    .mirage-mode-caption small {
+      color: #6f8b7c;
+      font: 500 9px/1.3 "DM Sans", sans-serif;
+    }
+
+    .mirage-mode-switch {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      flex: 0 0 auto;
+      width: 226px;
+      min-height: 46px;
+      padding: 4px;
+      border: 1px solid rgba(92, 220, 166, .34);
+      border-radius: 15px;
+      background:
+        linear-gradient(145deg, #14241b, #08110c);
+      box-shadow:
+        0 7px 23px rgba(0, 0, 0, .3),
+        inset 0 1px 0 rgba(255, 255, 255, .06),
+        0 0 20px rgba(52, 197, 137, .08);
+      color: #eafff4;
+      cursor: pointer;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      transition:
+        border-color .3s ease,
+        box-shadow .3s ease,
+        background .3s ease,
+        transform .2s ease;
+    }
+
+    .mirage-mode-switch:active {
+      transform: scale(.975);
+    }
+
+    .mirage-mode-switch:focus-visible {
+      outline: 2px solid #70f0bd;
+      outline-offset: 3px;
+    }
+
+    .mirage-mode-option {
+      position: relative;
+      z-index: 2;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 35px;
+      border-radius: 10px;
+      color: #81978a;
+      font: 800 8px/1 "Manrope", sans-serif;
+      letter-spacing: .65px;
+      white-space: nowrap;
+      transition: color .3s ease;
+    }
+
+    .mirage-mode-option i {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 6px;
+      border-radius: 50%;
+      background: #64766b;
+      transition: all .3s ease;
+    }
+
+    .mirage-mode-highlight {
+      position: absolute;
+      z-index: 1;
+      left: 4px;
+      top: 4px;
+      bottom: 4px;
+      width: calc(50% - 4px);
+      border: 1px solid rgba(110, 255, 194, .35);
+      border-radius: 11px;
+      background:
+        linear-gradient(145deg, #245a40, #123522);
+      box-shadow:
+        0 0 17px rgba(48, 219, 147, .2),
+        inset 0 1px 0 rgba(255, 255, 255, .13);
+      transition: transform .38s cubic-bezier(.2,.8,.2,1);
+    }
+
+    .mirage-mode-switch.is-spectre .mirage-mode-highlight {
+      transform: translateX(100%);
+      background:
+        linear-gradient(145deg, #164a38, #09251a);
+      border-color: rgba(113, 255, 207, .52);
+      box-shadow:
+        0 0 22px rgba(58, 230, 170, .24),
+        inset 0 1px 0 rgba(255, 255, 255, .15);
+    }
+
+    .mirage-mode-switch:not(.is-spectre)
+      .mirage-mode-option:first-of-type,
+    .mirage-mode-switch.is-spectre
+      .mirage-mode-option:last-of-type {
+      color: #effff7;
+    }
+
+    .mirage-mode-switch:not(.is-spectre)
+      .mirage-mode-option:first-of-type i,
+    .mirage-mode-switch.is-spectre
+      .mirage-mode-option:last-of-type i {
+      background: #76ffd0;
+      box-shadow: 0 0 9px #4be6ad;
+    }
+
+    /* Remove all LIVE / LIVE DATA pills across the app. */
+
+    .live-pill {
+      display: none !important;
+    }
+
+    /* =================================================
+       4. SHARED COMPONENT REDESIGN
+       ================================================= */
 
     .page-intro {
-      position:relative;
-      overflow:hidden;
+      position: relative !important;
+      min-width: 0 !important;
+      margin: 0 0 17px !important;
+      padding: 4px 2px 13px !important;
+      border-bottom: 1px solid rgba(114, 208, 165, .10);
+      align-items: center !important;
     }
 
-    .page-intro > * {
-      position:relative;
-      z-index:1;
+    .page-intro .eyebrow,
+    .eyebrow {
+      color: #65c99c !important;
+      font-size: 8px !important;
+      font-weight: 800 !important;
+      letter-spacing: 2px !important;
     }
 
-    .page-intro .mode-identity {
-      z-index:0;
+    .page-intro h1 {
+      color: #f0fff6 !important;
+      font: 800 clamp(25px, 5vw, 33px)/1.08 "Manrope", sans-serif !important;
+      letter-spacing: -1.2px !important;
+      margin: 7px 0 5px !important;
     }
 
-    /* Общие микроанимации */
+    .subtle {
+      color: #83998d !important;
+    }
 
     .hero-card,
+    .portfolio-total,
     .chart-panel,
+    .strategy-summary,
+    .strategy-card,
     .status-card,
     .mini-market,
     .market-row,
-    .strategy-card,
-    .portfolio-total,
     .position-card,
     .account-row,
     .history-row,
     .mi-panel,
-    .analysis-placeholder {
+    .analysis-card,
+    .analysis-placeholder,
+    #premium-equity,
+    #premium-positions,
+    #premium-activity,
+    .premium-kpi {
+      border-color: var(--mirage-line) !important;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .035),
+        0 13px 32px rgba(0, 0, 0, .22) !important;
       transition:
-        transform .32s ease,
-        border-color .32s ease,
-        box-shadow .32s ease,
-        background .32s ease;
+        transform .28s ease,
+        border-color .28s ease,
+        box-shadow .28s ease,
+        background .28s ease !important;
     }
 
-    .app-shell button:not(:disabled) {
-      transition:transform .22s ease,filter .22s ease;
+    .section-title {
+      margin-top: 15px !important;
+      margin-bottom: 11px !important;
     }
 
-    .app-shell button:not(:disabled):active {
-      transform:scale(.985);
+    .section-title h2 {
+      color: #e9f8ef !important;
+      font: 800 16px "Manrope", sans-serif !important;
+      letter-spacing: -.35px !important;
     }
 
-    .live-pill i,
-    .connection i,
-    .status-dot.good {
-      animation:mirage-pulse 2.2s ease-in-out infinite;
-    }
-
-    .hero-card:before {
-      animation:mirage-shimmer 8s ease-in-out infinite;
-    }
-
-    @keyframes mirage-float {
-      0%,100% { transform:translateY(0); }
-      50% { transform:translateY(-7px); }
-    }
-
-    @keyframes mirage-pulse {
-      0%,100% { opacity:1; }
-      50% { opacity:.48; }
-    }
-
-    @keyframes mirage-shimmer {
-      0%,100% { opacity:.3; }
-      50% { opacity:.8; }
-    }
-
-    @keyframes mirage-line {
-      from { transform:scaleX(.45); opacity:.45; }
-      to { transform:scaleX(1); opacity:1; }
-    }
-
-    /* STEALTH — упрощённый интерфейс */
-
-    body[data-mirage-mode="stealth"] .mode-switch {
-      background:linear-gradient(145deg,#17231e,#0b110e);
-      border-color:rgba(100,220,170,.22);
-    }
-
-    body[data-mirage-mode="stealth"] .mi-table-wrap,
-    body[data-mirage-mode="stealth"] .mi-folds {
-      display:none !important;
-    }
-
-    body[data-mirage-mode="stealth"] .mi-grid .mi-stat:nth-child(n+4) {
-      display:none !important;
-    }
-
-    body[data-mirage-mode="stealth"] .mi-panel {
-      border-radius:22px !important;
-    }
-
-    body[data-mirage-mode="stealth"] .hero-card,
-    body[data-mirage-mode="stealth"] .strategy-card,
-    body[data-mirage-mode="stealth"] .status-card {
-      border-radius:22px !important;
-    }
-
-    /* SPECTRE — полная аналитическая версия */
-
-    body[data-mirage-mode="spectre"] {
+    .hero-card {
       background:
         radial-gradient(
-          ellipse at 50% -20%,
-          rgba(36,130,98,.17),
-          transparent 48%
+          ellipse at 90% 0%,
+          rgba(52, 203, 143, .16),
+          transparent 45%
         ),
-        #030807 !important;
-      color:#e9f4f0 !important;
+        linear-gradient(145deg, #102019, #08100c 72%) !important;
+      border: 1px solid rgba(92, 220, 165, .2) !important;
+      border-radius: 23px !important;
     }
 
-    body[data-mirage-mode="spectre"] .topbar {
-      background:rgba(2,7,6,.97) !important;
-      border-bottom:1px solid rgba(89,232,188,.2) !important;
-      box-shadow:0 10px 35px rgba(0,0,0,.4);
+    .hero-balance {
+      color: #f2fff7 !important;
+      text-shadow: 0 0 27px rgba(61, 219, 157, .12);
     }
 
-    body[data-mirage-mode="spectre"] .mode-toolbar {
-      background:linear-gradient(
-        90deg,transparent,rgba(27,90,67,.08),transparent
-      );
+    .hero-pnl {
+      color: #65e6ad !important;
     }
 
-    body[data-mirage-mode="spectre"] .brand-copy b {
-      letter-spacing:.2em !important;
+    .paper-tag {
+      border-color: rgba(83, 210, 151, .22) !important;
+      background: rgba(32, 127, 81, .12) !important;
+      color: #8be6b8 !important;
     }
 
-    body[data-mirage-mode="spectre"] .brand-copy small,
-    body[data-mirage-mode="spectre"] .subtle {
-      color:#91a99e !important;
+    .premium-kpi {
+      background:
+        radial-gradient(
+          circle at 100% 0%,
+          rgba(59, 194, 137, .12),
+          transparent 55%
+        ),
+        linear-gradient(145deg, #13231a, #0a120d) !important;
+      border: 1px solid rgba(104, 213, 161, .14) !important;
+      border-radius: 17px !important;
     }
 
-    body[data-mirage-mode="spectre"] .eyebrow {
-      color:#67c9a8 !important;
-      letter-spacing:.19em !important;
+    .premium-kpi strong {
+      color: #f1fff7 !important;
     }
 
-    body[data-mirage-mode="spectre"] .hero-card,
-    body[data-mirage-mode="spectre"] .portfolio-total,
-    body[data-mirage-mode="spectre"] .chart-panel,
-    body[data-mirage-mode="spectre"] .strategy-summary,
-    body[data-mirage-mode="spectre"] .strategy-card,
-    body[data-mirage-mode="spectre"] .status-card,
-    body[data-mirage-mode="spectre"] .mini-market,
-    body[data-mirage-mode="spectre"] .market-row,
-    body[data-mirage-mode="spectre"] .position-card,
-    body[data-mirage-mode="spectre"] .account-row,
-    body[data-mirage-mode="spectre"] .history-row,
-    body[data-mirage-mode="spectre"] .mi-panel,
-    body[data-mirage-mode="spectre"] .analysis-placeholder {
-      background:linear-gradient(
-        145deg,#0d1815,#050b09
-      ) !important;
-      border:1px solid rgba(89,225,183,.23) !important;
-      border-radius:13px !important;
+    .premium-kpi .green,
+    .premium-pnl.green {
+      color: #5de7aa !important;
+    }
+
+    .premium-kpi .red,
+    .premium-pnl.red {
+      color: #ff7180 !important;
+    }
+
+    #premium-equity,
+    #premium-positions,
+    #premium-activity {
+      background:
+        linear-gradient(145deg, rgba(17, 33, 24, .96), rgba(8, 15, 11, .98)) !important;
+      border: 1px solid rgba(106, 213, 161, .14) !important;
+      border-radius: 19px !important;
+      padding: 16px !important;
+      margin: 0 !important;
+    }
+
+    .premium-section-title {
+      color: #e7f8ed !important;
+    }
+
+    .premium-empty {
+      color: #82978b !important;
+    }
+
+    .chart-panel,
+    .analysis-card,
+    .analysis-placeholder {
+      background:
+        radial-gradient(
+          ellipse at 90% 0%,
+          rgba(45, 154, 105, .1),
+          transparent 50%
+        ),
+        linear-gradient(145deg, #101d16, #080f0b) !important;
+      border-radius: 20px !important;
+    }
+
+    .market-row {
+      background: rgba(12, 25, 17, .82) !important;
+      border-radius: 14px !important;
+      border: 1px solid rgba(117, 201, 158, .1) !important;
+    }
+
+    .market-row.selected {
+      border-color: rgba(76, 231, 167, .48) !important;
+      background: rgba(26, 82, 54, .22) !important;
+    }
+
+    .market-row:active,
+    .strategy-card:active,
+    .status-card:active {
+      transform: scale(.99);
+    }
+
+    .strategy-card {
+      background:
+        linear-gradient(145deg, #13231a, #09110c) !important;
+      border: 1px solid rgba(106, 213, 161, .14) !important;
+      border-radius: 18px !important;
+    }
+
+    .risk-note {
+      border-color: rgba(105, 208, 157, .16) !important;
+      background: rgba(13, 30, 19, .75) !important;
+      border-radius: 17px !important;
+    }
+
+    .portfolio-total {
+      background:
+        radial-gradient(
+          ellipse at 90% 0%,
+          rgba(50, 204, 141, .18),
+          transparent 55%
+        ),
+        linear-gradient(145deg, #12241a, #07100b) !important;
+      border: 1px solid rgba(91, 220, 164, .22) !important;
+      border-radius: 22px !important;
+    }
+
+    .portfolio-total b {
+      color: #f1fff6 !important;
+    }
+
+    .bottom-nav {
+      background: rgba(4, 12, 8, .96) !important;
+      border: 1px solid rgba(106, 213, 161, .18) !important;
+      box-shadow: 0 14px 38px rgba(0, 0, 0, .55) !important;
+      backdrop-filter: blur(22px) !important;
+      -webkit-backdrop-filter: blur(22px) !important;
+    }
+
+    .bottom-nav .nav-item {
+      color: #71867a !important;
+      border-radius: 13px !important;
+    }
+
+    .bottom-nav .nav-item.active {
+      color: #78f0bc !important;
+      background: rgba(49, 169, 112, .13) !important;
+    }
+
+    .bottom-nav .nav-item.active small {
+      color: #a3f5d0 !important;
+    }
+
+    button,
+    select {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .primary-btn,
+    .mi-primary {
+      background: linear-gradient(110deg, #1e8052, #155b3b) !important;
+      border: 1px solid rgba(110, 241, 183, .25) !important;
+      color: #f0fff7 !important;
+      box-shadow: 0 8px 24px rgba(23, 127, 79, .18) !important;
+    }
+
+    /* =================================================
+       5. PAGE LAYOUT ENGINE
+       ================================================= */
+
+    .page.active {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 13px;
+      align-content: start;
+      animation: mirage-page-enter .42s ease both !important;
+    }
+
+    .page > * {
+      min-width: 0;
+    }
+
+    .page-intro { grid-area: intro; }
+    .hero-card { grid-area: hero; }
+    #premium-kpis { grid-area: metrics; }
+    #premium-equity { grid-area: equity; }
+    #premium-positions { grid-area: positions; }
+    #premium-activity { grid-area: activity; }
+    #dashboard-markets { grid-area: markets; }
+    .mirage-market-heading { grid-area: market-heading; }
+    .mirage-system-heading { grid-area: system-heading; }
+    .status-grid { grid-area: system; }
+
+    /* DASHBOARD */
+
+    #dashboard.active {
+      grid-template-areas:
+        "intro"
+        "hero"
+        "metrics"
+        "equity"
+        "market-heading"
+        "markets"
+        "positions"
+        "activity"
+        "system-heading"
+        "system";
+    }
+
+    /* MARKETS */
+
+    #markets.active {
+      grid-template-areas:
+        "intro"
+        "market-toolbar"
+        "market-list"
+        "market-chart";
+    }
+
+    #markets .market-toolbar {
+      grid-area: market-toolbar;
+    }
+
+    #markets #markets-list {
+      grid-area: market-list;
+    }
+
+    #markets .chart-panel {
+      grid-area: market-chart;
+    }
+
+    /* SIGNALS */
+
+    #signals.active {
+      grid-template-areas:
+        "intro"
+        "signal-controls"
+        "signal-result"
+        "signal-disclaimer";
+    }
+
+    #signals .signal-selector {
+      grid-area: signal-controls;
+    }
+
+    #signals #analysis-result {
+      grid-area: signal-result;
+    }
+
+    #signals .disclaimer {
+      grid-area: signal-disclaimer;
+    }
+
+    /* STRATEGIES */
+
+    #strategies.active {
+      grid-template-areas:
+        "intro"
+        "strategy-summary"
+        "strategy-list"
+        "robustness"
+        "risk-note";
+    }
+
+    #strategies .strategy-summary {
+      grid-area: strategy-summary;
+    }
+
+    #strategies #strategy-list {
+      grid-area: strategy-list;
+    }
+
+    #strategies .risk-note {
+      grid-area: risk-note;
+    }
+
+    #strategies .mi-panel {
+      grid-area: robustness;
+    }
+
+    /* PORTFOLIO */
+
+    #portfolio.active {
+      grid-template-areas:
+        "intro"
+        "portfolio-total"
+        "portfolio-stats"
+        "positions-heading"
+        "positions-list"
+        "accounts-heading"
+        "accounts"
+        "history-heading"
+        "history";
+    }
+
+    #portfolio .portfolio-total {
+      grid-area: portfolio-total;
+    }
+
+    #portfolio .portfolio-stats {
+      grid-area: portfolio-stats;
+    }
+
+    #portfolio .positions-list {
+      grid-area: positions-list;
+    }
+
+    #portfolio #portfolio-accounts {
+      grid-area: accounts;
+    }
+
+    #portfolio .history-list {
+      grid-area: history;
+    }
+
+    #portfolio .mirage-positions-heading {
+      grid-area: positions-heading;
+    }
+
+    #portfolio .mirage-accounts-heading {
+      grid-area: accounts-heading;
+    }
+
+    #portfolio .mirage-history-heading {
+      grid-area: history-heading;
+    }
+
+    /* =================================================
+       6. STEALTH MODE — FOCUSED COMMAND CENTER
+       ================================================= */
+
+    body[data-mirage-mode="stealth"] {
+      --mirage-radius: 22px;
+    }
+
+    body[data-mirage-mode="stealth"] .mirage-mode-caption small {
+      color: #789487;
+    }
+
+    body[data-mirage-mode="stealth"] .hero-card {
+      min-height: 205px;
+      padding: 21px !important;
+      border-radius: 23px !important;
       box-shadow:
-        inset 0 1px 0 rgba(190,255,232,.04),
-        0 14px 38px rgba(0,0,0,.3) !important;
+        0 18px 42px rgba(0, 0, 0, .25),
+        0 0 28px rgba(49, 177, 119, .055) !important;
+    }
+
+    body[data-mirage-mode="stealth"] #premium-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 9px !important;
+    }
+
+    body[data-mirage-mode="stealth"] .premium-kpi {
+      min-height: 94px !important;
+      padding: 13px !important;
+    }
+
+    body[data-mirage-mode="stealth"] .premium-kpi strong {
+      font-size: 21px !important;
+    }
+
+    body[data-mirage-mode="stealth"] #premium-activity {
+      display: none !important;
+    }
+
+    body[data-mirage-mode="stealth"] #portfolio #portfolio-accounts,
+    body[data-mirage-mode="stealth"] #portfolio .history-list,
+    body[data-mirage-mode="stealth"] #portfolio .mirage-accounts-heading,
+    body[data-mirage-mode="stealth"] #portfolio .mirage-history-heading {
+      display: none !important
+        }
+
+  /* ============================================================
+     7. SPECTRE MODE — FULL ANALYTICS LAYOUT
+  ============================================================ */
+
+  body[data-mirage-mode="spectre"] #dashboard,
+  body[data-mirage-mode="spectre"] #markets,
+  body[data-mirage-mode="spectre"] #signals,
+  body[data-mirage-mode="spectre"] #strategies,
+  body[data-mirage-mode="spectre"] #portfolio {
+    gap: 18px !important;
+  }
+
+  body[data-mirage-mode="spectre"] .hero-card {
+    min-height: 250px !important;
+    padding: 30px !important;
+    border-radius: 18px !important;
+    background:
+      radial-gradient(circle at 85% 15%, rgba(16,185,129,.15), transparent 35%),
+      linear-gradient(145deg, #101b19, #080e0d) !important;
+    border: 1px solid rgba(16,185,129,.2) !important;
+  }
+
+  body[data-mirage-mode="spectre"] #premium-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  body[data-mirage-mode="spectre"] .premium-kpi {
+    min-height: 125px !important;
+    padding: 18px !important;
+    border-radius: 15px !important;
+    background: linear-gradient(145deg, #121b19, #0a100f) !important;
+    border: 1px solid rgba(148,163,184,.13) !important;
+  }
+
+  body[data-mirage-mode="spectre"] #premium-activity,
+  body[data-mirage-mode="spectre"] #portfolio #portfolio-accounts,
+  body[data-mirage-mode="spectre"] #portfolio .history-list {
+    display: block !important;
+  }
+
+  body[data-mirage-mode="spectre"] .section-title {
+    font-size: 15px !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+    color: #a7b8b1 !important;
+  }
+
+  body[data-mirage-mode="spectre"] .mi-panel,
+  body[data-mirage-mode="spectre"] .mi-table,
+  body[data-mirage-mode="spectre"] .mi-folds {
+    border-color: rgba(52,211,153,.18) !important;
+  }
+
+  body[data-mirage-mode="spectre"] .mi-panel {
+    background: linear-gradient(145deg, #111b18, #090f0e) !important;
+    border-radius: 16px !important;
+    padding: 20px !important;
+  }
+
+  body[data-mirage-mode="spectre"] .mi-table th {
+    color: #8ecfc1 !important;
+  }
+
+  body[data-mirage-mode="spectre"] .mi-table td {
+    border-color: rgba(102,211,161,.13) !important;
+  }
+
+  body[data-mirage-mode="spectre"] .mi-folds {
+    display: block !important;
+  }
+
+  body[data-mirage-mode="spectre"] .mi-grid .mi-stat {
+    display: flex !important;
+  }
+
+  /* ============================================================
+     8. RESPONSIVE LAYOUT
+  ============================================================ */
+
+  @media (min-width: 700px) {
+    main {
+      padding-left: 25px !important;
+      padding-right: 25px !important;
+    }
+  }
+
+  @media (max-width: 699px) {
+    .mirage-mode-toolbar {
+      width: 100% !important;
+      margin: 12px 0 18px !important;
+    }
+
+    .mirage-mode-switch {
+      width: 100% !important;
+    }
+
+    .mirage-mode-option {
+      flex: 1 !important;
+      justify-content: center !important;
+      font-size: 11px !important;
+      padding: 12px 7px !important;
+    }
+
+    body[data-mirage-mode="stealth"] #premium-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    body[data-mirage-mode="spectre"] #premium-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
     body[data-mirage-mode="spectre"] .hero-card {
-      background:
-        radial-gradient(
-          ellipse at 85% 0%,
-          rgba(53,208,158,.19),
-          transparent 42%
-        ),
-        linear-gradient(145deg,#0c1c17,#050b09) !important;
-      border-radius:17px !important;
+      padding: 21px !important;
     }
 
-    body[data-mirage-mode="spectre"] .hero-balance,
-    body[data-mirage-mode="spectre"] .portfolio-total b {
-      color:#eafff5 !important;
-      text-shadow:0 0 24px rgba(74,223,177,.17);
+    body[data-mirage-mode="spectre"] .premium-kpi {
+      min-height: 105px !important;
+      padding: 13px !important;
     }
 
-    body[data-mirage-mode="spectre"] .paper-tag,
-    body[data-mirage-mode="spectre"] .live-pill {
-      border-color:rgba(89,225,183,.3) !important;
-      color:#8fe7c7 !important;
-      background:rgba(41,143,108,.12) !important;
+    .mirage-brand-line {
+      gap: 8px !important;
     }
 
-    body[data-mirage-mode="spectre"] .bottom-nav {
-      background:rgba(3,9,7,.98) !important;
-      border-color:rgba(89,225,183,.23) !important;
-      box-shadow:0 12px 36px rgba(0,0,0,.5) !important;
+    .mirage-status-led {
+      width: 8px !important;
+      height: 8px !important;
     }
+  }
 
-    body[data-mirage-mode="spectre"] .bottom-nav .nav-item.active {
-      color:#8bf0ca !important;
-      background:rgba(52,185,139,.15) !important;
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+      scroll-behavior: auto !important;
     }
+  }
 
-    body[data-mirage-mode="spectre"] .mode-switch {
-      border-color:rgba(90,231,188,.42);
-      background:linear-gradient(135deg,#0a231b,#030b08);
-      box-shadow:0 0 22px rgba(40,179,133,.16);
-    }
+  /* ============================================================
+     9. MODE TRANSITION
+  ============================================================ */
 
-    body[data-mirage-mode="spectre"] .mode-switch-led {
-      background:#7affd0;
-      box-shadow:0 0 13px #52edbd;
-    }
+  .mirage-mode-transition {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: none;
+    opacity: 0;
+    background:
+      radial-gradient(circle at center,
+        rgba(16,185,129,.18),
+        rgba(2,6,5,.96) 75%);
+    transition: opacity .32s ease;
+  }
 
-    body[data-mirage-mode="spectre"] .mi-table-wrap,
-    body[data-mirage-mode="spectre"] .mi-folds {
-      display:block !important;
-    }
+  .mirage-mode-transition.active {
+    opacity: 1;
+  }
 
-    body[data-mirage-mode="spectre"] .mi-grid .mi-stat {
-      display:flex !important;
-    }
+  .mirage-mode-transition::after {
+    content: "MIRAGE";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #a7f3d0;
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: .42em;
+    text-shadow: 0 0 35px rgba(16,185,129,.55);
+  }
 
-    body[data-mirage-mode="spectre"] .mi-table th {
-      color:#8ce6c5 !important;
-    }
+  .mirage-mode-toolbar {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 14px auto 20px;
+  }
 
-    body[data-mirage-mode="spectre"] .mi-table td {
-      border-color:rgba(95,211,171,.15) !important;
-    }
+  .mirage-mode-switch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px;
+    border-radius: 14px;
+    background: #101816;
+    border: 1px solid rgba(148,163,184,.2);
+    box-shadow: 0 8px 28px rgba(0,0,0,.28);
+  }
 
-    body[data-mirage-mode="spectre"] .risk-note {
-      background:linear-gradient(135deg,#0e1e18,#050c09) !important;
-      border-color:rgba(89,225,183,.2) !important;
-    }
+  .mirage-mode-option {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 19px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #82918b;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    cursor: pointer;
+    transition: color .25s ease, background .25s ease;
+  }
 
-    body[data-mirage-mode="spectre"] .page.active {
-      animation:spectre-page-enter .55s ease both;
-    }
+  .mirage-mode-option.active {
+    color: #eafff5;
+    background: linear-gradient(135deg, #126b4c, #0b4936);
+    box-shadow: 0 0 18px rgba(16,185,129,.2);
+  }
 
-    body[data-mirage-mode="spectre"] .mi-panel h3,
-    body[data-mirage-mode="spectre"] .section-title h2 {
-      letter-spacing:.035em;
-    }
+  .mirage-mode-option:focus-visible {
+    outline: 2px solid #34d399;
+    outline-offset: 3px;
+  }
 
-    body[data-mirage-mode="spectre"] .hero-card,
-    body[data-mirage-mode="spectre"] .strategy-card,
-    body[data-mirage-mode="spectre"] .chart-panel,
-    body[data-mirage-mode="spectre"] .mi-panel {
-      position:relative;
-      overflow:hidden;
-    }
+  .mirage-mode-highlight {
+    display: none;
+  }
 
-    body[data-mirage-mode="spectre"] .strategy-card:active,
-    body[data-mirage-mode="spectre"] .market-row:active {
-      border-color:rgba(100,255,205,.55) !important;
-    }
+  .mirage-brand-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
 
-    @keyframes spectre-page-enter {
-      from {
-        opacity:.55;
-        filter:brightness(.7);
-        transform:translateY(7px);
-      }
-      to {
-        opacity:1;
-        filter:brightness(1);
-        transform:none;
-      }
-    }
+  .mirage-status-led {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    border-radius: 50%;
+    background: #64748b;
+    box-shadow: 0 0 0 3px rgba(100,116,139,.12);
+    transition: background .2s ease, box-shadow .2s ease;
+  }
 
-    /* Мобильная адаптация */
+  .mirage-status-led.online {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34,197,94,.13), 0 0 12px rgba(34,197,94,.6);
+  }
 
-    @media(max-width:520px) {
-      .mode-toolbar {
-        padding:7px 14px 0;
-        min-height:45px;
-      }
+  .mirage-status-led.offline {
+    background: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239,68,68,.13), 0 0 12px rgba(239,68,68,.45);
+  }
 
-      .mode-switch {
-        min-height:34px;
-        padding:5px 9px;
-        font-size:8px;
-        letter-spacing:.055em;
-      }
+  .mirage-status-led.unknown {
+    background: #94a3b8;
+  }
 
-      .mode-switch-arrow {
-        display:none;
-      }
-
-      .mode-identity {
-        right:65px;
-        width:38px;
-        height:43px;
-      }
-    }
-
-    @media(max-width:350px) {
-      .mode-switch {
-        gap:5px;
-        padding:5px 7px;
-        font-size:7px;
-      }
-
-      .mode-status-slot .connection {
-        padding:8px 9px !important;
-        font-size:7px !important;
-      }
-    }
-
-    @media(prefers-reduced-motion:reduce) {
-      *,*::before,*::after {
-        animation-duration:.01ms !important;
-        animation-iteration-count:1 !important;
-        scroll-behavior:auto !important;
-        transition-duration:.01ms !important;
-      }
-    }
+  .mirage-mode-toolbar button,
+  .mirage-mode-toolbar span {
+    -webkit-tap-highlight-color: transparent;
+  }
   `;
 
-  function addStyles() {
-    if ($("#mirage-mode-styles")) return;
+  /* ============================================================
+     10. INSTALL STYLES
+  ============================================================ */
 
-    const style = document.createElement("style");
-    style.id = "mirage-mode-styles";
-    style.textContent = styles;
-    document.head.appendChild(style);
+  const mirageStyleId = "mirage-dual-interface-styles";
+
+  let mirageStyle = document.getElementById(mirageStyleId);
+
+  if (!mirageStyle) {
+    mirageStyle = document.createElement("style");
+    mirageStyle.id = mirageStyleId;
+    document.head.appendChild(mirageStyle);
   }
 
-  /* Отдельная строка: статус + переключатель */
+  mirageStyle.textContent = css;
 
-  function addSwitch() {
-    const topbar = $(".topbar");
+  /* ============================================================
+     11. MODE STATE
+  ============================================================ */
 
-    if (!topbar || $("#mirage-mode-switch")) return;
+  const MIRAGE_MODE_KEY = "mirage-mode-v1";
+  const VALID_MODES = ["stealth", "spectre"];
 
-    const toolbar = document.createElement("div");
-    toolbar.className = "mode-toolbar";
+  let currentMode = "stealth";
 
-    const statusSlot = document.createElement("div");
-    statusSlot.className = "mode-status-slot";
+  try {
+    const savedMode = localStorage.getItem(MIRAGE_MODE_KEY);
+    if (VALID_MODES.includes(savedMode)) {
+      currentMode = savedMode;
+    }
+  } catch (error) {
+    console.warn("[MIRAGE] Could not read saved mode:", error);
+  }
 
-    const connection = $(".connection");
+  /* ============================================================
+     12. TOP BAR
+  ============================================================ */
 
+  function setupBranding() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+
+    const brand = topbar.querySelector(".brand-copy b");
+    if (brand && !brand.parentElement.classList.contains("mirage-brand-line")) {
+      const line = document.createElement("span");
+      line.className = "mirage-brand-line";
+
+      const led = document.createElement("span");
+      led.className = "mirage-status-led unknown";
+      led.id = "mirage-connection-led";
+      led.setAttribute("aria-label", "Connection status");
+
+      brand.parentNode.insertBefore(line, brand);
+      line.appendChild(brand);
+      line.appendChild(led);
+    }
+
+    const livePills = document.querySelectorAll(
+      ".live-pill, .live-badge, .live-indicator"
+    );
+
+    livePills.forEach((element) => {
+      element.style.display = "none";
+    });
+
+    const connection = topbar.querySelector(".connection");
     if (connection) {
-      statusSlot.appendChild(connection);
+      connection.style.display = "none";
     }
 
-    const wrap = document.createElement("div");
-    wrap.className = "mode-switch-wrap";
+    let toolbar = document.getElementById("mirage-mode-toolbar");
 
-    wrap.innerHTML = `
-      <button class="mode-switch"
-        id="mirage-mode-switch"
-        type="button"
-        aria-pressed="false">
+    if (!toolbar) {
+      toolbar = document.createElement("div");
+      toolbar.id = "mirage-mode-toolbar";
+      toolbar.className = "mirage-mode-toolbar";
 
-        <span class="mode-switch-led"></span>
-        <span class="mode-switch-name">STEALTH MODE</span>
-        <span class="mode-switch-arrow">⇄</span>
-
-      </button>
-    `;
-
-    toolbar.appendChild(statusSlot);
-    toolbar.appendChild(wrap);
-
-    topbar.insertAdjacentElement("afterend", toolbar);
-
-    $("#mirage-mode-switch").addEventListener(
-      "click",
-      toggleMode
-    );
-  }
-
-  /* Экран перехода */
-
-  function addTransition() {
-    if ($("#mirage-mode-transition")) return;
-
-    const overlay = document.createElement("div");
-
-    overlay.id = "mirage-mode-transition";
-    overlay.className = "mode-transition";
-    overlay.setAttribute("aria-hidden", "true");
-
-    overlay.innerHTML = `
-      <div class="mode-transition-content">
-
-        <div class="mode-transition-art">
-          ${stealthArt}
+      toolbar.innerHTML = `
+        <div class="mirage-mode-switch" role="group" aria-label="Interface mode">
+          <button type="button"
+            class="mirage-mode-option stealth-option"
+            data-mode="stealth"
+            aria-pressed="false">
+            ◉ STEALTH MODE
+          </button>
+          <button type="button"
+            class="mirage-mode-option spectre-option"
+            data-mode="spectre"
+            aria-pressed="false">
+            ◈ SPECTRE MODE
+          </button>
         </div>
+      `;
 
-        <div class="mode-transition-title">
-          STEALTH MODE
-        </div>
+      topbar.insertAdjacentElement("afterend", toolbar);
 
-        <div class="mode-transition-line"></div>
-
-        <div class="mode-transition-caption">
-          MIRAGE INTERFACE SHIFT
-        </div>
-
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-  }
-
-  /* Эмблемы на страницах */
-
-  function updateIdentities() {
-    document.querySelectorAll(".mode-identity")
-      .forEach(el => el.remove());
-
-    document.querySelectorAll(".page-intro")
-      .forEach(intro => {
-
-        const art = document.createElement("div");
-
-        art.className = "mode-identity";
-        art.setAttribute("aria-hidden", "true");
-
-        art.innerHTML =
-          currentMode === "spectre"
-            ? spectreArt
-            : stealthArt;
-
-        intro.appendChild(art);
+      toolbar.querySelectorAll("[data-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          setMode(button.dataset.mode, true);
+        });
       });
-  }
-
-  function updateSwitch() {
-    const button = $("#mirage-mode-switch");
-
-    if (!button) return;
-
-    const label = $(".mode-switch-name", button);
-
-    if (label) {
-      label.textContent = MODES[currentMode];
     }
 
-    button.setAttribute(
-      "aria-pressed",
-      String(currentMode === "spectre")
-    );
+    updateConnectionLed();
+  }
 
-    button.setAttribute(
-      "aria-label",
-      `Текущий режим: ${MODES[currentMode]}. Переключить режим`
-    );
+  /* ============================================================
+     13. CONNECTION STATUS LED
+  ============================================================ */
+
+  function updateConnectionLed() {
+    const led = document.getElementById("mirage-connection-led");
+    if (!led) return;
+
+    const label = document.querySelector("#connection-label");
+    const labelText = label ? label.textContent.toLowerCase() : "";
+
+    const sourceIcon = document.querySelector(".connection i");
+    const iconColor = sourceIcon
+      ? getComputedStyle(sourceIcon).color
+      : "";
+
+    led.classList.remove("online", "offline", "unknown");
+
+    if (
+      labelText.includes("онлайн") ||
+      labelText.includes("online") ||
+      labelText.includes("connected") ||
+      labelText.includes("подключено") ||
+      iconColor.includes("34, 197, 94") ||
+      iconColor.includes("16, 185, 129")
+    ) {
+      led.classList.add("online");
+    } else if (
+      labelText.includes("ошибка") ||
+      labelText.includes("offline") ||
+      labelText.includes("отключ") ||
+      labelText.includes("error") ||
+      labelText.includes("failed") ||
+      iconColor.includes("239, 68, 68")
+    ) {
+      led.classList.add("offline");
+    } else {
+      led.classList.add("unknown");
+    }
+  }
+
+  /* ============================================================
+     14. PAGE MAPPING
+  ============================================================ */
+
+  function mapDashboard() {
+    const dashboard = document.querySelector("#dashboard");
+    if (!dashboard) return;
+
+    dashboard.dataset.mirageMapped = "true";
+  }
+
+  function mapMarkets() {
+    const markets = document.querySelector("#markets");
+    if (!markets) return;
+
+    markets.dataset.mirageMapped = "true";
+  }
+
+  function mapSignals() {
+    const signals = document.querySelector("#signals");
+    if (!signals) return;
+
+    signals.dataset.mirageMapped = "true";
+  }
+
+  function mapStrategies() {
+    const strategies = document.querySelector("#strategies");
+    if (!strategies) return;
+
+    strategies.dataset.mirageMapped = "true";
+  }
+
+  function mapPortfolio() {
+    const portfolio = document.querySelector("#portfolio");
+    if (!portfolio) return;
+
+    portfolio.dataset.mirageMapped = "true";
+  }
+
+  function mapAllPages() {
+    mapDashboard();
+    mapMarkets();
+    mapSignals();
+    mapStrategies();
+    mapPortfolio();
+  }
+
+  /* ============================================================
+     15. APPLY MODE
+  ============================================================ */
+
+  function updateModeButtons() {
+    const toolbar = document.getElementById("mirage-mode-toolbar");
+    if (!toolbar) return;
+
+    toolbar.querySelectorAll("[data-mode]").forEach((button) => {
+      const active = button.dataset.mode === currentMode;
+
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
   }
 
   function applyMode() {
     document.body.dataset.mirageMode = currentMode;
+
     document.documentElement.dataset.mirageMode = currentMode;
 
-    updateSwitch();
-    updateIdentities();
+    updateModeButtons();
+    mapAllPages();
+    updateConnectionLed();
 
     window.dispatchEvent(
       new CustomEvent("mirage:modechange", {
@@ -711,109 +1300,131 @@
     );
   }
 
-  function saveMode() {
+  function setMode(mode, animate = false) {
+    if (!VALID_MODES.includes(mode) || mode === currentMode) return;
+
+    currentMode = mode;
+
     try {
-      localStorage.setItem(STORAGE_KEY, currentMode);
-    } catch (_) {}
-  }
-
-  function toggleMode() {
-    if (switching) return;
-
-    switching = true;
-
-    const nextMode =
-      currentMode === "stealth"
-        ? "spectre"
-        : "stealth";
-
-    const overlay = $("#mirage-mode-transition");
-
-    if (!overlay) {
-      currentMode = nextMode;
-      saveMode();
-      applyMode();
-      switching = false;
-      return;
+      localStorage.setItem(MIRAGE_MODE_KEY, currentMode);
+    } catch (error) {
+      console.warn("[MIRAGE] Could not save mode:", error);
     }
 
-    $(".mode-transition-title", overlay).textContent =
-      MODES[nextMode];
+    const transition = document.getElementById("mirage-mode-transition");
 
-    $(".mode-transition-art", overlay).innerHTML =
-      nextMode === "spectre"
-        ? spectreArt
-        : stealthArt;
-
-    overlay.classList.add("active");
-
-    window.setTimeout(() => {
-      currentMode = nextMode;
-      saveMode();
-      applyMode();
-    }, 380);
-
-    window.setTimeout(() => {
-      overlay.classList.remove("active");
+    if (animate && transition) {
+      transition.classList.add("active");
 
       window.setTimeout(() => {
-        switching = false;
-      }, 500);
+        applyMode();
 
-    }, 1150);
+        window.setTimeout(() => {
+          transition.classList.remove("active");
+        }, 180);
+      }, 180);
+    } else {
+      applyMode();
+    }
   }
 
-  function refreshPageIllustrations() {
-    updateIdentities();
+  /* ============================================================
+     16. TRANSITION OVERLAY
+  ============================================================ */
+
+  function setupTransition() {
+    if (document.getElementById("mirage-mode-transition")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "mirage-mode-transition";
+    overlay.className = "mirage-mode-transition";
+    overlay.setAttribute("aria-hidden", "true");
+
+    document.body.appendChild(overlay);
   }
 
-  function boot() {
-    addStyles();
-    addSwitch();
-    addTransition();
-    applyMode();
+  /* ============================================================
+     17. DOM WATCHERS
+  ============================================================ */
 
-    document.addEventListener("click", event => {
-      if (event.target.closest("[data-page]")) {
-        window.setTimeout(
-          refreshPageIllustrations,
-          150
-        );
-      }
+  let updateQueued = false;
+
+  function scheduleUpdate() {
+    if (updateQueued) return;
+
+    updateQueued = true;
+
+    requestAnimationFrame(() => {
+      updateQueued = false;
+
+      setupBranding();
+      mapAllPages();
+      updateConnectionLed();
+      updateModeButtons();
     });
+  }
 
-    const observer = new MutationObserver(records => {
+  function setupObservers() {
+    const observer = new MutationObserver((records) => {
+      let shouldUpdate = false;
+
       for (const record of records) {
-        for (const node of record.addedNodes) {
-
-          if (
-            node.nodeType === 1 &&
-            (
-              node.matches?.(".page-intro") ||
-              node.querySelector?.(".page-intro")
-            )
-          ) {
-            refreshPageIllustrations();
-            return;
-          }
+        if (
+          record.type === "childList" ||
+          record.type === "characterData" ||
+          record.attributeName === "style"
+        ) {
+          shouldUpdate = true;
+          break;
         }
       }
+
+      if (shouldUpdate) scheduleUpdate();
     });
 
     observer.observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["style"]
     });
+
+    const connectionLabel = document.querySelector("#connection-label");
+
+    if (connectionLabel) {
+      const statusObserver = new MutationObserver(updateConnectionLed);
+
+      statusObserver.observe(connectionLabel, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+  }
+
+  /* ============================================================
+     18. INITIALIZATION
+  ============================================================ */
+
+  function initializeMirage() {
+    setupTransition();
+    setupBranding();
+    mapAllPages();
+    applyMode();
+    setupObservers();
+
+    console.info(
+      `[MIRAGE] Dual Interface System initialized: ${currentMode.toUpperCase()}`
+    );
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener(
-      "DOMContentLoaded",
-      boot,
-      { once: true }
-    );
+    document.addEventListener("DOMContentLoaded", initializeMirage, {
+      once: true
+    });
   } else {
-    boot();
+    initializeMirage();
   }
 
 })();
