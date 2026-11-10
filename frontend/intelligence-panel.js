@@ -1,0 +1,31 @@
+/* MIRAGE Intelligence panel — additive UI; does not replace existing app.js */
+(() => {
+  "use strict";
+  if (window.__MIRAGE_INTELLIGENCE_PANEL__) return;
+  window.__MIRAGE_INTELLIGENCE_PANEL__ = true;
+  const style = document.createElement("style");
+  style.textContent = `
+    .mi-panel{margin:18px 0;padding:18px;border:1px solid rgba(95,190,150,.2);border-radius:18px;background:linear-gradient(145deg,#0b1512,#070c0a);color:#e7f2ec}
+    .mi-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.mi-panel h3{margin:0;font:700 17px Manrope,sans-serif}.mi-sub{color:#91a69a;font-size:12px;margin-top:5px}
+    .mi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:16px 0}.mi-stat{padding:12px;border-radius:12px;background:#101b16}.mi-stat small{display:block;color:#8fa497;font-size:10px}.mi-stat b{display:block;margin-top:6px;font-size:18px}
+    .mi-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.mi-controls select,.mi-controls button{background:#13221a;color:#e8f4ed;border:1px solid #315342;border-radius:10px;padding:10px 12px}.mi-controls button{background:#174d37;font-weight:700}.mi-result{font-size:12px;line-height:1.6;color:#b9c9bf;margin-top:12px;white-space:pre-wrap}.mi-tag{color:#69d5a0;font-size:10px;letter-spacing:1px}
+    @media(max-width:480px){.mi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mi-stat b{font-size:16px}}
+  `;
+  document.head.appendChild(style);
+  const host = document.getElementById("strategy-list");
+  if (!host) return;
+  const panel = document.createElement("section");
+  panel.className = "mi-panel";
+  panel.innerHTML = `<div class="mi-head"><div><div class="mi-tag">MIRAGE INTELLIGENCE</div><h3>Рыночный интеллект</h3><div class="mi-sub">Режимы рынка · статистика · историческая проверка</div></div><span class="paper-tag">PAPER ONLY</span></div>
+    <div class="mi-grid"><div class="mi-stat"><small>Закрытых сделок в выборке</small><b id="mi-trades">—</b></div><div class="mi-stat"><small>Win rate</small><b id="mi-win">—</b></div><div class="mi-stat"><small>Profit factor</small><b id="mi-pf">—</b></div><div class="mi-stat"><small>Открытых позиций</small><b id="mi-open">—</b></div><div class="mi-stat"><small>Net P&amp;L выборки</small><b id="mi-pnl">—</b></div><div class="mi-stat"><small>Обучение</small><b style="font-size:13px">Сбор данных</b></div></div>
+    <div class="mi-controls"><select id="mi-symbol" aria-label="Актив"><option>BTCUSDT</option><option>ETHUSDT</option><option>BNBUSDT</option><option>SOLUSDT</option><option>XRPUSDT</option></select><select id="mi-interval" aria-label="Таймфрейм"><option value="1d">1D</option><option value="4h">4H</option><option value="1h">1H</option></select><button id="mi-analyze">Анализ рынка</button><button id="mi-backtest">Backtest</button></div><div id="mi-result" class="mi-result">Загружаем статистику MIRAGE…</div>`;
+  host.insertAdjacentElement("afterend", panel);
+  const $ = id => panel.querySelector(`#${id}`);
+  const headers = () => ({Accept:"application/json","X-Telegram-Init-Data":window.Telegram?.WebApp?.initData || ""});
+  async function get(path){const r=await fetch(path,{headers:headers(),cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+  const fmt = v => v == null ? "—" : typeof v === "number" ? v.toFixed(2) : String(v);
+  async function loadOverview(){try{const d=await get("/api/intelligence/overview");$("mi-trades").textContent=fmt(d.closed_trades_sample);$("mi-win").textContent=d.win_rate_pct==null?"—":`${fmt(d.win_rate_pct)}%`;$("mi-pf").textContent=fmt(d.profit_factor);$("mi-open").textContent=fmt(d.open_positions);$("mi-pnl").textContent=d.net_pnl_sample==null?"—":`$${fmt(d.net_pnl_sample)}`;$("mi-result").textContent=d.learning_note || "Статистика обновлена.";}catch(e){$("mi-result").textContent=`Не удалось загрузить статистику: ${e.message}. Открой приложение через Telegram.`;}}
+  async function analyze(){const symbol=$("mi-symbol").value,interval=$("mi-interval").value;$("mi-result").textContent="Анализируем свечи…";try{const d=await get(`/api/intelligence/market/${encodeURIComponent(symbol)}?interval=${encodeURIComponent(interval)}`);$("mi-result").textContent=`${d.symbol} · ${d.interval}\nРежим: ${d.regime}\nНаправление: ${d.direction}\nОценка: ${d.score}/100\nЦена: ${fmt(d.price)}\nОбъём / средний: ${fmt(d.volume_ratio)}x\n${(d.signals||[]).join("\n") || "Нет подтверждённых факторов"}\n\n${d.note||""}`;}catch(e){$("mi-result").textContent=`Ошибка анализа: ${e.message}`;}}
+  async function test(){const symbol=$("mi-symbol").value,interval=$("mi-interval").value;$("mi-result").textContent="Проводим исторический тест…";try{const d=await get(`/api/intelligence/backtest/${encodeURIComponent(symbol)}?interval=${encodeURIComponent(interval)}`);if(d.status!=="ok"){ $("mi-result").textContent=`Недостаточно данных для теста (${d.candles||0} свечей).`;return;}const f=x=>`До тестового разделения: доходность ${x.return_pct}% · DD ${x.max_drawdown_pct}% · сделок ${x.trades} · win rate ${x.win_rate_pct}% · PF ${x.profit_factor}`;const o=d.out_of_sample;$("mi-result").textContent=`${symbol} · ${interval}\n${f(d.in_sample)}\nOut-of-sample: доходность ${o.return_pct}% · DD ${o.max_drawdown_pct}% · сделок ${o.trades} · win rate ${o.win_rate_pct}% · PF ${o.profit_factor}\n\nКомиссия ${d.assumptions.fee_per_side_pct}% и slippage ${d.assumptions.slippage_per_side_pct}% на сторону. ${d.warning}`;}catch(e){$("mi-result").textContent=`Ошибка backtest: ${e.message}`;}}
+  $("mi-analyze").addEventListener("click",analyze);$("mi-backtest").addEventListener("click",test);loadOverview();
+})();
