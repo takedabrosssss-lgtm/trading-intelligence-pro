@@ -1,6 +1,8 @@
+
 /* =========================================================
-   MIRAGE 2.7 — STEALTH / SPECTRE MODE SYSTEM
-   Только интерфейс. Торговая логика и расчёты не меняются.
+   MIRAGE 2.7.1 — MODE SYSTEM
+   STEALTH / SPECTRE
+   Только интерфейс. Торговая логика не меняется.
    ========================================================= */
 
 (() => {
@@ -10,28 +12,32 @@
   window.__MIRAGE_MODE_SYSTEM__ = true;
 
   const STORAGE_KEY = "mirage-mode-v1";
+
   const MODES = {
     stealth: "STEALTH MODE",
     spectre: "SPECTRE MODE"
   };
 
-  const $ = (selector, root = document) => root.querySelector(selector);
+  const $ = (selector, root = document) =>
+    root.querySelector(selector);
 
   let currentMode = "stealth";
   let switching = false;
 
   try {
-    currentMode = localStorage.getItem(STORAGE_KEY) === "spectre"
-      ? "spectre"
-      : "stealth";
+    currentMode =
+      localStorage.getItem(STORAGE_KEY) === "spectre"
+        ? "spectre"
+        : "stealth";
   } catch (_) {}
 
-  /* Фирменный призрак STEALTH */
+  /* Фирменный призрак */
 
   const stealthArt = `
     <svg viewBox="0 0 120 132" aria-hidden="true">
       <defs>
-        <linearGradient id="mirageGhostGradient" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="mirageGhostGradient"
+          x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stop-color="#effff8"/>
           <stop offset="100%" stop-color="#63dcae"/>
         </linearGradient>
@@ -41,18 +47,17 @@
       <ellipse cx="45" cy="55" rx="5" ry="8" fill="#10251e"/>
       <ellipse cx="72" cy="55" rx="5" ry="8" fill="#10251e"/>
       <path d="M52 73q8 7 16 0" fill="none"
-        stroke="#10251e" stroke-width="3" stroke-linecap="round"/>
-      <path d="M30 24q-8 8-8 20M84 22q9 8 10 19"
-        fill="none" stroke="#fff" stroke-opacity=".7"
-        stroke-width="3" stroke-linecap="round"/>
+        stroke="#10251e" stroke-width="3"
+        stroke-linecap="round"/>
     </svg>`;
 
-  /* Геометрическая эмблема SPECTRE */
+  /* Эмблема SPECTRE */
 
   const spectreArt = `
     <svg viewBox="0 0 140 140" aria-hidden="true">
       <defs>
-        <linearGradient id="mirageSpectreGradient" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="mirageSpectreGradient"
+          x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stop-color="#d7fff4"/>
           <stop offset="50%" stop-color="#4be0b1"/>
           <stop offset="100%" stop-color="#163b36"/>
@@ -67,10 +72,11 @@
       </defs>
 
       <path d="M70 9 119 37v57l-49 28-49-28V37Z"
-        fill="none" stroke="#48d9ad" stroke-opacity=".35"/>
+        fill="none" stroke="#48d9ad" stroke-opacity=".4"/>
 
       <path d="M70 19 109 42v46l-39 23-39-23V42Z"
-        fill="url(#mirageSpectreGradient)" fill-opacity=".12"
+        fill="url(#mirageSpectreGradient)"
+        fill-opacity=".12"
         stroke="#75f3ca" stroke-width="1.5"/>
 
       <path d="M70 28 96 43v31L70 89 44 74V43Z"
@@ -84,30 +90,51 @@
         stroke="#03100d" stroke-width="3"
         stroke-linecap="round"/>
 
-      <path d="M70 12v14M70 89v27M21 47l13 7m72 0 13-7"
-        stroke="#69edc3" stroke-opacity=".5"/>
-
       <circle cx="70" cy="8" r="3" fill="#8dffdc"/>
       <circle cx="70" cy="119" r="3" fill="#8dffdc"/>
     </svg>`;
 
-  /* Визуальные стили обоих режимов */
+  /* Стили */
 
   const styles = `
-    .mode-switch-wrap {
+
+    /* Верхняя панель режимов */
+
+    .mode-toolbar {
+      position:relative;
+      z-index:19;
+      width:100%;
+      max-width:760px;
+      min-height:48px;
+      margin:0 auto;
+      padding:7px 22px 0;
       display:flex;
       align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      box-sizing:border-box;
+    }
+
+    .mode-status-slot {
+      min-width:0;
+      display:flex;
+      align-items:center;
+    }
+
+    .mode-status-slot .connection {
+      margin:0;
     }
 
     .mode-switch {
       display:flex;
       align-items:center;
+      justify-content:center;
       gap:8px;
       min-height:36px;
-      padding:6px 10px;
-      border:1px solid rgba(255,255,255,.14);
+      padding:7px 12px;
+      border:1px solid rgba(255,255,255,.15);
       border-radius:999px;
-      background:rgba(12,17,15,.88);
+      background:rgba(12,17,15,.9);
       color:#effff8;
       font:800 9px/1 "Manrope",sans-serif;
       letter-spacing:.09em;
@@ -124,6 +151,7 @@
     .mode-switch-led {
       width:7px;
       height:7px;
+      flex:0 0 7px;
       border-radius:50%;
       background:#43d9a5;
       box-shadow:0 0 11px #43d9a5;
@@ -133,6 +161,8 @@
       opacity:.55;
       font-size:13px;
     }
+
+    /* Переход между режимами */
 
     .mode-transition {
       position:fixed;
@@ -194,20 +224,24 @@
     .mode-transition-line {
       width:120px;
       height:1px;
-      background:linear-gradient(90deg,transparent,#45d9a6,transparent);
+      background:linear-gradient(
+        90deg,transparent,#45d9a6,transparent
+      );
       animation:mirage-line 1s ease infinite alternate;
     }
+
+    /* Иллюстрации режима */
 
     .mode-identity {
       position:absolute;
       z-index:0;
-      right:12px;
-      top:12px;
-      width:62px;
-      height:70px;
-      opacity:.82;
+      right:76px;
+      top:5px;
+      width:43px;
+      height:48px;
+      opacity:.48;
       pointer-events:none;
-      filter:drop-shadow(0 0 15px rgba(67,217,165,.22));
+      filter:drop-shadow(0 0 15px rgba(67,217,165,.25));
       animation:mirage-float 5s ease-in-out infinite;
     }
 
@@ -230,7 +264,7 @@
       z-index:0;
     }
 
-    /* Общие приятные микроанимации */
+    /* Общие микроанимации */
 
     .hero-card,
     .chart-panel,
@@ -289,10 +323,11 @@
       to { transform:scaleX(1); opacity:1; }
     }
 
-    /* STEALTH MODE: привычный дизайн, меньше визуального шума */
+    /* STEALTH — упрощённый интерфейс */
 
     body[data-mirage-mode="stealth"] .mode-switch {
-      background:rgba(12,17,15,.82);
+      background:linear-gradient(145deg,#17231e,#0b110e);
+      border-color:rgba(100,220,170,.22);
     }
 
     body[data-mirage-mode="stealth"] .mi-table-wrap,
@@ -300,27 +335,47 @@
       display:none !important;
     }
 
-    body[data-mirage-mode="stealth"] .mi-panel {
-      border-radius:19px;
+    body[data-mirage-mode="stealth"] .mi-grid .mi-stat:nth-child(n+4) {
+      display:none !important;
     }
 
-    /* SPECTRE MODE: отдельная тёмная профессиональная атмосфера */
+    body[data-mirage-mode="stealth"] .mi-panel {
+      border-radius:22px !important;
+    }
+
+    body[data-mirage-mode="stealth"] .hero-card,
+    body[data-mirage-mode="stealth"] .strategy-card,
+    body[data-mirage-mode="stealth"] .status-card {
+      border-radius:22px !important;
+    }
+
+    /* SPECTRE — полная аналитическая версия */
 
     body[data-mirage-mode="spectre"] {
       background:
-        radial-gradient(ellipse at 50% -20%,rgba(36,130,98,.13),transparent 48%),
+        radial-gradient(
+          ellipse at 50% -20%,
+          rgba(36,130,98,.17),
+          transparent 48%
+        ),
         #030807 !important;
       color:#e9f4f0 !important;
     }
 
     body[data-mirage-mode="spectre"] .topbar {
-      background:rgba(2,7,6,.96) !important;
-      border-bottom-color:rgba(89,232,188,.17) !important;
-      box-shadow:0 10px 35px rgba(0,0,0,.3);
+      background:rgba(2,7,6,.97) !important;
+      border-bottom:1px solid rgba(89,232,188,.2) !important;
+      box-shadow:0 10px 35px rgba(0,0,0,.4);
+    }
+
+    body[data-mirage-mode="spectre"] .mode-toolbar {
+      background:linear-gradient(
+        90deg,transparent,rgba(27,90,67,.08),transparent
+      );
     }
 
     body[data-mirage-mode="spectre"] .brand-copy b {
-      letter-spacing:.2em;
+      letter-spacing:.2em !important;
     }
 
     body[data-mirage-mode="spectre"] .brand-copy small,
@@ -330,7 +385,7 @@
 
     body[data-mirage-mode="spectre"] .eyebrow {
       color:#67c9a8 !important;
-      letter-spacing:.19em;
+      letter-spacing:.19em !important;
     }
 
     body[data-mirage-mode="spectre"] .hero-card,
@@ -346,47 +401,55 @@
     body[data-mirage-mode="spectre"] .history-row,
     body[data-mirage-mode="spectre"] .mi-panel,
     body[data-mirage-mode="spectre"] .analysis-placeholder {
-      background:linear-gradient(145deg,#0d1815,#050b09) !important;
-      border-color:rgba(89,225,183,.19) !important;
+      background:linear-gradient(
+        145deg,#0d1815,#050b09
+      ) !important;
+      border:1px solid rgba(89,225,183,.23) !important;
+      border-radius:13px !important;
       box-shadow:
-        inset 0 1px 0 rgba(190,255,232,.035),
-        0 14px 38px rgba(0,0,0,.25) !important;
+        inset 0 1px 0 rgba(190,255,232,.04),
+        0 14px 38px rgba(0,0,0,.3) !important;
     }
 
     body[data-mirage-mode="spectre"] .hero-card {
       background:
-        radial-gradient(ellipse at 85% 0%,rgba(53,208,158,.17),transparent 42%),
+        radial-gradient(
+          ellipse at 85% 0%,
+          rgba(53,208,158,.19),
+          transparent 42%
+        ),
         linear-gradient(145deg,#0c1c17,#050b09) !important;
+      border-radius:17px !important;
     }
 
     body[data-mirage-mode="spectre"] .hero-balance,
     body[data-mirage-mode="spectre"] .portfolio-total b {
       color:#eafff5 !important;
-      text-shadow:0 0 24px rgba(74,223,177,.13);
+      text-shadow:0 0 24px rgba(74,223,177,.17);
     }
 
     body[data-mirage-mode="spectre"] .paper-tag,
     body[data-mirage-mode="spectre"] .live-pill {
-      border-color:rgba(89,225,183,.25) !important;
+      border-color:rgba(89,225,183,.3) !important;
       color:#8fe7c7 !important;
-      background:rgba(41,143,108,.09) !important;
+      background:rgba(41,143,108,.12) !important;
     }
 
     body[data-mirage-mode="spectre"] .bottom-nav {
-      background:rgba(3,9,7,.97) !important;
-      border-color:rgba(89,225,183,.2) !important;
+      background:rgba(3,9,7,.98) !important;
+      border-color:rgba(89,225,183,.23) !important;
       box-shadow:0 12px 36px rgba(0,0,0,.5) !important;
     }
 
     body[data-mirage-mode="spectre"] .bottom-nav .nav-item.active {
       color:#8bf0ca !important;
-      background:rgba(52,185,139,.13) !important;
+      background:rgba(52,185,139,.15) !important;
     }
 
     body[data-mirage-mode="spectre"] .mode-switch {
-      border-color:rgba(90,231,188,.35);
+      border-color:rgba(90,231,188,.42);
       background:linear-gradient(135deg,#0a231b,#030b08);
-      box-shadow:0 0 18px rgba(40,179,133,.1);
+      box-shadow:0 0 22px rgba(40,179,133,.16);
     }
 
     body[data-mirage-mode="spectre"] .mode-switch-led {
@@ -394,40 +457,100 @@
       box-shadow:0 0 13px #52edbd;
     }
 
+    body[data-mirage-mode="spectre"] .mi-table-wrap,
+    body[data-mirage-mode="spectre"] .mi-folds {
+      display:block !important;
+    }
+
+    body[data-mirage-mode="spectre"] .mi-grid .mi-stat {
+      display:flex !important;
+    }
+
     body[data-mirage-mode="spectre"] .mi-table th {
       color:#8ce6c5 !important;
     }
 
     body[data-mirage-mode="spectre"] .mi-table td {
-      border-color:rgba(95,211,171,.12) !important;
+      border-color:rgba(95,211,171,.15) !important;
     }
 
     body[data-mirage-mode="spectre"] .risk-note {
       background:linear-gradient(135deg,#0e1e18,#050c09) !important;
-      border-color:rgba(89,225,183,.16) !important;
+      border-color:rgba(89,225,183,.2) !important;
     }
 
     body[data-mirage-mode="spectre"] .page.active {
       animation:spectre-page-enter .55s ease both;
     }
 
-    @keyframes spectre-page-enter {
-      from { opacity:.65; filter:brightness(.72); transform:translateY(7px); }
-      to { opacity:1; filter:brightness(1); transform:none; }
+    body[data-mirage-mode="spectre"] .mi-panel h3,
+    body[data-mirage-mode="spectre"] .section-title h2 {
+      letter-spacing:.035em;
     }
 
+    body[data-mirage-mode="spectre"] .hero-card,
+    body[data-mirage-mode="spectre"] .strategy-card,
+    body[data-mirage-mode="spectre"] .chart-panel,
+    body[data-mirage-mode="spectre"] .mi-panel {
+      position:relative;
+      overflow:hidden;
+    }
+
+    body[data-mirage-mode="spectre"] .strategy-card:active,
+    body[data-mirage-mode="spectre"] .market-row:active {
+      border-color:rgba(100,255,205,.55) !important;
+    }
+
+    @keyframes spectre-page-enter {
+      from {
+        opacity:.55;
+        filter:brightness(.7);
+        transform:translateY(7px);
+      }
+      to {
+        opacity:1;
+        filter:brightness(1);
+        transform:none;
+      }
+    }
+
+    /* Мобильная адаптация */
+
     @media(max-width:520px) {
-      .topbar { padding-left:12px !important; padding-right:10px !important; }
-      .top-actions { gap:7px !important; }
+      .mode-toolbar {
+        padding:7px 14px 0;
+        min-height:45px;
+      }
+
       .mode-switch {
         min-height:34px;
-        padding:5px 8px;
+        padding:5px 9px;
         font-size:8px;
         letter-spacing:.055em;
       }
-      .mode-switch-arrow { display:none; }
-      .connection { font-size:8px !important; }
-      .mode-identity { width:51px; height:59px; }
+
+      .mode-switch-arrow {
+        display:none;
+      }
+
+      .mode-identity {
+        right:65px;
+        width:38px;
+        height:43px;
+      }
+    }
+
+    @media(max-width:350px) {
+      .mode-switch {
+        gap:5px;
+        padding:5px 7px;
+        font-size:7px;
+      }
+
+      .mode-status-slot .connection {
+        padding:8px 9px !important;
+        font-size:7px !important;
+      }
     }
 
     @media(prefers-reduced-motion:reduce) {
@@ -449,69 +572,129 @@
     document.head.appendChild(style);
   }
 
+  /* Отдельная строка: статус + переключатель */
+
   function addSwitch() {
-    const actions = $(".top-actions");
-    if (!actions || $("#mirage-mode-switch")) return;
+    const topbar = $(".topbar");
+
+    if (!topbar || $("#mirage-mode-switch")) return;
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "mode-toolbar";
+
+    const statusSlot = document.createElement("div");
+    statusSlot.className = "mode-status-slot";
+
+    const connection = $(".connection");
+
+    if (connection) {
+      statusSlot.appendChild(connection);
+    }
 
     const wrap = document.createElement("div");
     wrap.className = "mode-switch-wrap";
 
     wrap.innerHTML = `
-      <button class="mode-switch" id="mirage-mode-switch"
-              type="button" aria-pressed="false">
+      <button class="mode-switch"
+        id="mirage-mode-switch"
+        type="button"
+        aria-pressed="false">
+
         <span class="mode-switch-led"></span>
         <span class="mode-switch-name">STEALTH MODE</span>
         <span class="mode-switch-arrow">⇄</span>
+
       </button>
     `;
 
-    const refresh = $("#refresh-btn");
-    actions.insertBefore(wrap, refresh || null);
+    toolbar.appendChild(statusSlot);
+    toolbar.appendChild(wrap);
 
-    $("#mirage-mode-switch").addEventListener("click", toggleMode);
+    topbar.insertAdjacentElement("afterend", toolbar);
+
+    $("#mirage-mode-switch").addEventListener(
+      "click",
+      toggleMode
+    );
   }
+
+  /* Экран перехода */
 
   function addTransition() {
     if ($("#mirage-mode-transition")) return;
 
     const overlay = document.createElement("div");
+
     overlay.id = "mirage-mode-transition";
     overlay.className = "mode-transition";
     overlay.setAttribute("aria-hidden", "true");
 
     overlay.innerHTML = `
       <div class="mode-transition-content">
-        <div class="mode-transition-art">${stealthArt}</div>
-        <div class="mode-transition-title">STEALTH MODE</div>
+
+        <div class="mode-transition-art">
+          ${stealthArt}
+        </div>
+
+        <div class="mode-transition-title">
+          STEALTH MODE
+        </div>
+
         <div class="mode-transition-line"></div>
-        <div class="mode-transition-caption">MIRAGE INTERFACE SHIFT</div>
+
+        <div class="mode-transition-caption">
+          MIRAGE INTERFACE SHIFT
+        </div>
+
       </div>
     `;
 
     document.body.appendChild(overlay);
   }
 
-  function updateIdentities() {
-    document.querySelectorAll(".mode-identity").forEach(el => el.remove());
+  /* Эмблемы на страницах */
 
-    document.querySelectorAll(".page-intro").forEach(intro => {
-      const art = document.createElement("div");
-      art.className = "mode-identity";
-      art.setAttribute("aria-hidden", "true");
-      art.innerHTML = currentMode === "spectre" ? spectreArt : stealthArt;
-      intro.appendChild(art);
-    });
+  function updateIdentities() {
+    document.querySelectorAll(".mode-identity")
+      .forEach(el => el.remove());
+
+    document.querySelectorAll(".page-intro")
+      .forEach(intro => {
+
+        const art = document.createElement("div");
+
+        art.className = "mode-identity";
+        art.setAttribute("aria-hidden", "true");
+
+        art.innerHTML =
+          currentMode === "spectre"
+            ? spectreArt
+            : stealthArt;
+
+        intro.appendChild(art);
+      });
   }
 
   function updateSwitch() {
     const button = $("#mirage-mode-switch");
+
     if (!button) return;
 
     const label = $(".mode-switch-name", button);
-    if (label) label.textContent = MODES[currentMode];
 
-    button.setAttribute("aria-pressed", String(currentMode === "spectre"));
-    button.setAttribute("aria-label", `Текущий режим: ${MODES[currentMode]}. Переключить режим`);
+    if (label) {
+      label.textContent = MODES[currentMode];
+    }
+
+    button.setAttribute(
+      "aria-pressed",
+      String(currentMode === "spectre")
+    );
+
+    button.setAttribute(
+      "aria-label",
+      `Текущий режим: ${MODES[currentMode]}. Переключить режим`
+    );
   }
 
   function applyMode() {
@@ -521,9 +704,11 @@
     updateSwitch();
     updateIdentities();
 
-    window.dispatchEvent(new CustomEvent("mirage:modechange", {
-      detail: { mode: currentMode }
-    }));
+    window.dispatchEvent(
+      new CustomEvent("mirage:modechange", {
+        detail: { mode: currentMode }
+      })
+    );
   }
 
   function saveMode() {
@@ -537,7 +722,11 @@
 
     switching = true;
 
-    const nextMode = currentMode === "stealth" ? "spectre" : "stealth";
+    const nextMode =
+      currentMode === "stealth"
+        ? "spectre"
+        : "stealth";
+
     const overlay = $("#mirage-mode-transition");
 
     if (!overlay) {
@@ -548,10 +737,13 @@
       return;
     }
 
-    $(".mode-transition-title", overlay).textContent = MODES[nextMode];
+    $(".mode-transition-title", overlay).textContent =
+      MODES[nextMode];
 
     $(".mode-transition-art", overlay).innerHTML =
-      nextMode === "spectre" ? spectreArt : stealthArt;
+      nextMode === "spectre"
+        ? spectreArt
+        : stealthArt;
 
     overlay.classList.add("active");
 
@@ -567,6 +759,7 @@
       window.setTimeout(() => {
         switching = false;
       }, 500);
+
     }, 1150);
   }
 
@@ -580,18 +773,26 @@
     addTransition();
     applyMode();
 
-    /* При переходе между вкладками обновляем иллюстрацию режима. */
     document.addEventListener("click", event => {
       if (event.target.closest("[data-page]")) {
-        window.setTimeout(refreshPageIllustrations, 120);
+        window.setTimeout(
+          refreshPageIllustrations,
+          150
+        );
       }
     });
 
-    /* Поддержка панелей, которые добавляются динамически. */
     const observer = new MutationObserver(records => {
       for (const record of records) {
         for (const node of record.addedNodes) {
-          if (node.nodeType === 1 && node.matches?.(".page-intro")) {
+
+          if (
+            node.nodeType === 1 &&
+            (
+              node.matches?.(".page-intro") ||
+              node.querySelector?.(".page-intro")
+            )
+          ) {
             refreshPageIllustrations();
             return;
           }
@@ -606,8 +807,13 @@
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot, { once: true });
+    document.addEventListener(
+      "DOMContentLoaded",
+      boot,
+      { once: true }
+    );
   } else {
     boot();
   }
+
 })();
