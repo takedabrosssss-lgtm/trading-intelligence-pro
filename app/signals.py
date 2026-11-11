@@ -12,12 +12,14 @@ REWARD_RISK_RATIO = 2.0
 
 def closed_candles(candles: list[dict[str, Any]], timeframe: str) -> list[dict[str, Any]]:
     duration = TIMEFRAME_MS.get(timeframe)
-    if not duration or not candles: return candles
+    if not duration or not candles:
+        return candles
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     result = []
     for candle in candles:
         timestamp = candle.get("timestamp")
-        if timestamp is None or int(timestamp) + duration <= now_ms: result.append(candle)
+        if timestamp is None or int(timestamp) + duration <= now_ms:
+            result.append(candle)
     return result
 
 
@@ -27,40 +29,92 @@ def signal_strength(direction: str, raw_score: float) -> float:
 
 
 def is_quality_signal_values(direction, score, grade) -> bool:
-    if direction not in {"BUY", "SELL"} or score is None or (grade or "").upper() not in ALLOWED_GRADES: return False
-    try: strength = signal_strength(direction, float(score))
-    except (TypeError, ValueError): return False
+    if direction not in {"BUY", "SELL"} or score is None or (grade or "").upper() not in ALLOWED_GRADES:
+        return False
+    try:
+        strength = signal_strength(direction, float(score))
+    except (TypeError, ValueError):
+        return False
     return strength >= MIN_SIGNAL_STRENGTH
+
+
+def quality_gate(direction: str, indicators: dict[str, Any], strategy_model: str) -> dict[str, Any]:
+    """Require independent directional confirmation before publishing a setup."""
+    adx_data = indicators.get("adx") or {}
+    plus_di, minus_di = adx_data.get("plus_di"), adx_data.get("minus_di")
+    ema20, ema20_previous = indicators.get("ema20"), indicators.get("ema20_previous")
+    volume_ratio = indicators.get("volume_ratio")
+    checks = {"directional_movement": False, "ema_slope": False, "volume_participation": False}
+    reasons = []
+
+    if plus_di is not None and minus_di is not None:
+        checks["directional_movement"] = float(plus_di) > float(minus_di) if direction == "BUY" else float(minus_di) > float(plus_di)
+    if not checks["directional_movement"]:
+        reasons.append("DI не подтверждает направление")
+
+    if ema20 is not None and ema20_previous is not None:
+        checks["ema_slope"] = float(ema20) > float(ema20_previous) if direction == "BUY" else float(ema20) < float(ema20_previous)
+    if not checks["ema_slope"]:
+        reasons.append("Наклон EMA20 не подтверждает направление")
+
+    minimum_volume = 1.2 if strategy_model == "breakout" else 0.75
+    checks["volume_participation"] = volume_ratio is not None and float(volume_ratio) >= minimum_volume
+    if not checks["volume_participation"]:
+        reasons.append("Недостаточное участие объёма")
+
+    return {"passed": all(checks.values()), "checks": checks, "minimum_volume_ratio": minimum_volume, "rejection_reasons": reasons}
 
 
 def generate_signal(candles, symbol, timeframe, strategy):
     candles = closed_candles(candles, timeframe)
-    if len(candles) < 100: return None
+    if len(candles) < 100:
+        return None
     model = STRATEGY_BY_TIMEFRAME.get(timeframe)
-    if not model: return None
+    if not model:
+        return None
     analysis = analyze_strategy(candles, model)
-    if not analysis: return None
+    if not analysis:
+        return None
     direction, score, grade = analysis["direction"], float(analysis["score"]), analysis["grade"]
     entry = float(analysis["entry_price"])
     indicators = analysis.get("indicators") or {}
     atr = indicators.get("atr")
-    if direction not in {"BUY", "SELL"} or atr is None or float(atr) <= 0 or entry <= 0: return None
+    if direction not in {"BUY", "SELL"} or atr is None or float(atr) <= 0 or entry <= 0:
+        return None
     distance = float(atr) * ATR_STOP_MULTIPLIER
     stop, target = (entry-distance, entry+distance*REWARD_RISK_RATIO) if direction == "BUY" else (entry+distance, entry-distance*REWARD_RISK_RATIO)
-    if stop <= 0 or target <= 0: return None
-    eligible = is_quality_signal_values(direction, score, grade)
-    return {"symbol":symbol,"market":"crypto","timeframe":timeframe,"direction":direction,"grade":grade,"score":score,
-            "confidence":signal_strength(direction,score),"entry_price":entry,"stop_loss":stop,"take_profit":target,
-            "strategy":strategy,"strategy_model":model,"reasoning":analysis.get("reasoning",[]),"indicators":indicators,
-            "status":"new" if eligible else "filtered","eligible":eligible}
+    if stop <= 0 or target <= 0:
+        return None
+
+    base_quality = is_quality_signal_values(direction, score, grade)
+    gate = quality_gate(direction, indicators, model)
+    eligible = base_quality and gate["passed"]
+    indicators = {**indicators, "quality_gate": gate}
+    return {
+        "symbol": symbol, "market": "crypto", "timeframe": timeframe,
+        "direction": direction, "grade": grade, "score": score,
+        "confidence": signal_strength(direction, score),
+        "entry_price": entry, "stop_loss": stop, "take_profit": target,
+        "strategy": strategy, "strategy_model": model,
+        "reasoning": analysis.get("reasoning", []), "indicators": indicators,
+        "quality_gate": gate, "status": "new" if eligible else "filtered", "eligible": eligible,
+    }
 
 
 def is_eligible_for_auto_paper_trade(signal):
-    if not signal or signal.get("status") != "new" or not is_quality_signal_values(signal.get("direction"),signal.get("score"),signal.get("grade")): return False
+    if not signal or signal.get("status") != "new" or not is_quality_signal_values(signal.get("direction"), signal.get("score"), signal.get("grade")):
+        return False
     entry, stop, target = signal.get("entry_price"), signal.get("stop_loss"), signal.get("take_profit")
-    if not all(isinstance(v,(int,float)) and v>0 for v in (entry,stop,target)): return False
+    if not all(isinstance(v, (int, float)) and v > 0 for v in (entry, stop, target)):
+        return False
     return stop < entry < target if signal["direction"] == "BUY" else target < entry < stop
 
 
 def is_duplicate_signal(existing_signals, new_signal):
-    return any(x.symbol == new_signal["symbol"] and x.timeframe == new_signal["timeframe"] and x.direction == new_signal["direction"] and x.grade == new_signal["grade"] and x.status in {"new","eligible"} for x in existing_signals)
+    active_statuses = {"new", "eligible", "sent", "paper_opened", "paper_closed", "paper_skipped"}
+    return any(
+        x.symbol == new_signal["symbol"] and x.timeframe == new_signal["timeframe"]
+        and x.direction == new_signal["direction"] and x.grade == new_signal["grade"]
+        and x.status in active_statuses
+        for x in existing_signals
+    )

@@ -23,6 +23,7 @@ from app.worker import run_worker
 from app.intelligence_api import build_router
 from app.robustness_api import build_robustness_router
 from app.mirage4_api import build_mirage4_router
+from app.signal_intelligence_api import build_signal_intelligence_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-intelligence")
@@ -119,7 +120,7 @@ async def lifespan(app: FastAPI):
     bot_task = asyncio.create_task(run_bot_supervisor(), name="telegram-bot-polling")
     app.state.worker_task = worker_task
     app.state.bot_task = bot_task
-    logger.info("Trading Intelligence PRO started")
+    logger.info("MIRAGE 4.2 started")
     logger.info("Background scanner and Telegram bot tasks scheduled")
     try:
         yield
@@ -127,13 +128,14 @@ async def lifespan(app: FastAPI):
         for task in (worker_task, bot_task):
             task.cancel()
         await asyncio.gather(worker_task, bot_task, return_exceptions=True)
-        logger.info("Trading Intelligence PRO stopped")
+        logger.info("MIRAGE stopped")
 
 
-app = FastAPI(title="MIRAGE", version="4.0.0", lifespan=lifespan)
+app = FastAPI(title="MIRAGE", version="4.2.0", lifespan=lifespan)
 app.include_router(build_router(require_user))
 app.include_router(build_robustness_router(require_user))
 app.include_router(build_mirage4_router(require_user, app, APP_STARTED_AT))
+app.include_router(build_signal_intelligence_router(require_user))
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])

@@ -43,7 +43,10 @@ def ensure_database_schema():
 
 def already_exists(db, signal):
     cutoff=datetime.now(timezone.utc)-timedelta(minutes=DUPLICATE_WINDOW_MINUTES)
-    q=db.query(Signal).filter(Signal.symbol==signal["symbol"],Signal.timeframe==signal["timeframe"],Signal.direction==signal["direction"],Signal.grade==signal["grade"],Signal.created_at>=cutoff,Signal.status.in_(["new","eligible","sent"]))
+    # Keep the cooldown active after a signal has entered or completed Paper Trading.
+    # Otherwise a persistent market setup can be re-announced as a fresh signal.
+    statuses=["new","eligible","sent","paper_opened","paper_closed","paper_skipped"]
+    q=db.query(Signal).filter(Signal.symbol==signal["symbol"],Signal.timeframe==signal["timeframe"],Signal.direction==signal["direction"],Signal.grade==signal["grade"],Signal.created_at>=cutoff,Signal.status.in_(statuses))
     return db.query(q.exists()).scalar()
 
 def format_signal_message(signal):
