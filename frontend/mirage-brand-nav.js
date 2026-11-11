@@ -1,14 +1,14 @@
+
 (() => {
   "use strict";
 
-  if (window.__MIRAGE_BRAND_NAV_V2__) return;
-  window.__MIRAGE_BRAND_NAV_V2__ = true;
+  if (window.__MIRAGE_BRAND_NAV_V3__) return;
+  window.__MIRAGE_BRAND_NAV_V3__ = true;
 
   const BRAND = "MIRAGE";
   const TAGLINE = "SEE BEYOND THE MARKET";
   const LOGO = "/mirage-avatar-512.png";
-
-  const EXIT_MS = 220;
+  const SWITCH_MS = 190;
 
   const tabs = [
     ["dashboard", "Обзор", "home"],
@@ -26,15 +26,21 @@
     portfolio: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2"/></svg>'
   };
 
-  let navigationToken = 0;
+  let switchToken = 0;
+  let switching = false;
+
+  const $ = (selector, root = document) =>
+    root.querySelector(selector);
 
   function installStyles() {
-    if (document.getElementById("mirage-brand-nav-styles-v2")) return;
+    if ($("#mirage-brand-nav-styles-v3")) return;
 
     const style = document.createElement("style");
-    style.id = "mirage-brand-nav-styles-v2";
+    style.id = "mirage-brand-nav-styles-v3";
 
     style.textContent = `
+      /* BRAND */
+
       .brand-mark {
         width:40px!important;
         height:40px!important;
@@ -43,7 +49,8 @@
         border-radius:13px!important;
         border:1px solid rgba(54,235,183,.42)!important;
         background:#030807!important;
-        box-shadow:0 0 22px rgba(0,220,160,.12),
+        box-shadow:
+          0 0 22px rgba(0,220,160,.12),
           inset 0 1px 0 rgba(255,255,255,.18)!important;
       }
 
@@ -66,6 +73,8 @@
         letter-spacing:1.25px!important;
         font-size:7px!important;
       }
+
+      /* BOTTOM NAVIGATION */
 
       .bottom-nav {
         display:grid!important;
@@ -125,58 +134,46 @@
       }
 
       .bottom-nav>.nav-item.active svg {
-        filter:drop-shadow(0 0 5px rgba(56,229,166,.45));
+        filter:drop-shadow(0 0 5px rgba(56,229,166,.35));
       }
 
-      /* MIRAGE 4.3 — smooth page crossfade */
+      /* SINGLE NAVIGATION ANIMATION CONTROLLER */
+
       main {
-        position:relative!important;
-        isolation:isolate;
+        opacity:1!important;
+        transition:opacity 190ms ease!important;
+        will-change:opacity;
+      }
+
+      main.mirage-nav-dim {
+        opacity:.72!important;
+      }
+
+      /*
+       * Disable every competing page animation.
+       * No absolute positioning, blur, transforms or scaling.
+       */
+
+      main .page,
+      main .page.active,
+      main .page.mirage-leaving {
+        animation:none!important;
+        transition:none!important;
+        transform:none!important;
+        filter:none!important;
+        will-change:auto!important;
+        backface-visibility:visible!important;
       }
 
       main .page.active {
         display:block!important;
-        animation:mirage-page-enter-v2 460ms
-          cubic-bezier(.16,1,.3,1) both!important;
-        backface-visibility:hidden;
-        will-change:opacity,transform;
+        opacity:1!important;
+        position:relative!important;
+        pointer-events:auto!important;
       }
 
-      main .page.mirage-leaving {
-        display:block!important;
-        position:absolute!important;
-        top:0!important;
-        left:0!important;
-        right:0!important;
-        width:100%!important;
-        z-index:4!important;
+      main .page:not(.active) {
         pointer-events:none!important;
-        animation:mirage-page-exit-v2 220ms
-          cubic-bezier(.4,0,.2,1) both!important;
-        backface-visibility:hidden;
-        will-change:opacity,transform;
-      }
-
-      @keyframes mirage-page-enter-v2 {
-        from {
-          opacity:0;
-          transform:translate3d(0,10px,0);
-        }
-        to {
-          opacity:1;
-          transform:translate3d(0,0,0);
-        }
-      }
-
-      @keyframes mirage-page-exit-v2 {
-        from {
-          opacity:1;
-          transform:translate3d(0,0,0);
-        }
-        to {
-          opacity:0;
-          transform:translate3d(0,-4px,0);
-        }
       }
 
       @media(max-width:370px) {
@@ -191,12 +188,8 @@
       }
 
       @media(prefers-reduced-motion:reduce) {
-        main .page.active {
-          animation-duration:120ms!important;
-        }
-
-        main .page.mirage-leaving {
-          animation-duration:120ms!important;
+        main {
+          transition:none!important;
         }
       }
     `;
@@ -207,51 +200,56 @@
   function applyBrand() {
     document.title = BRAND;
 
-    const description = document.querySelector('meta[name="description"]');
+    const description = $('meta[name="description"]');
     if (description) {
       description.content = "MIRAGE — See beyond the market";
     }
 
-    const appName = document.querySelector('meta[name="application-name"]');
+    const appName = $('meta[name="application-name"]');
     if (appName) appName.content = BRAND;
 
-    const theme = document.querySelector('meta[name="theme-color"]');
+    const theme = $('meta[name="theme-color"]');
     if (theme) theme.content = "#030807";
 
-    const brand = document.querySelector(".brand");
+    const brand = $(".brand");
     if (brand) {
       brand.setAttribute("aria-label", "MIRAGE — на главную");
     }
 
-    const mark = document.querySelector(".brand-mark");
+    const mark = $(".brand-mark");
     if (mark) {
       mark.innerHTML =
         `<img src="${LOGO}" alt="MIRAGE" draggable="false">`;
     }
 
-    const copy = document.querySelector(".brand-copy");
+    const copy = $(".brand-copy");
     if (copy) {
-      copy.innerHTML = `<b>${BRAND}</b><small>${TAGLINE}</small>`;
+      copy.innerHTML =
+        `<b>${BRAND}</b><small>${TAGLINE}</small>`;
     }
 
-    const heading = document.querySelector("#dashboard .page-intro h1");
+    const heading = $("#dashboard .page-intro h1");
     if (heading) heading.textContent = BRAND;
 
-    const eyebrow = document.querySelector("#dashboard .page-intro .eyebrow");
+    const eyebrow = $("#dashboard .page-intro .eyebrow");
     if (eyebrow) eyebrow.textContent = TAGLINE;
 
-    document.querySelectorAll(".hero-watermark,.placeholder-mark")
+    document
+      .querySelectorAll(".hero-watermark,.placeholder-mark")
       .forEach(el => {
         el.textContent = "M";
       });
   }
 
+  function activePageId() {
+    return $("main .page.active")?.id || "dashboard";
+  }
+
   function buildNav() {
-    const nav = document.querySelector(".bottom-nav");
+    const nav = $(".bottom-nav");
     if (!nav) return;
 
-    const activePage =
-      document.querySelector("main .page.active")?.id || "dashboard";
+    const activePage = activePageId();
 
     nav.innerHTML = tabs.map(([page, label, icon]) => {
       const active = page === activePage;
@@ -273,7 +271,8 @@
   }
 
   function syncNavigation(pageId) {
-    document.querySelectorAll(".bottom-nav [data-page]")
+    document
+      .querySelectorAll(".bottom-nav [data-page]")
       .forEach(button => {
         const active = button.dataset.page === pageId;
 
@@ -285,77 +284,81 @@
       });
   }
 
-  function cleanupLeavingPage(page, token) {
-    if (!page) return;
+  function setActivePage(pageId) {
+    const target = document.getElementById(pageId);
+    if (!target || !target.classList.contains("page")) return false;
 
-    const cleanup = () => {
-      if (token !== navigationToken &&
-          page.classList.contains("active")) {
-        return;
-      }
+    const pages = [
+      ...document.querySelectorAll("main .page")
+    ];
+
+    if (!pages.includes(target)) return false;
+
+    pages.forEach(page => {
+      const active = page === target;
 
       page.classList.remove("mirage-leaving");
-    };
+      page.classList.toggle("active", active);
+      page.setAttribute("aria-hidden", active ? "false" : "true");
+    });
 
-    page.addEventListener("animationend", event => {
-      if (
-        event.target === page &&
-        event.animationName === "mirage-page-exit-v2"
-      ) {
-        cleanup();
-      }
-    }, { once: true });
+    syncNavigation(pageId);
 
-    window.setTimeout(cleanup, EXIT_MS + 100);
+    return true;
   }
 
   function navigate(pageId) {
     const target = document.getElementById(pageId);
+    const main = $("main");
 
-    if (!target || !target.classList.contains("page")) {
+    if (
+      !main ||
+      !target ||
+      !target.classList.contains("page")
+    ) {
       return false;
     }
 
-    const pages = [...document.querySelectorAll("main .page")];
-
-    if (!pages.includes(target)) {
-      return false;
-    }
-
-    const current = pages.find(page =>
-      page.classList.contains("active")
-    );
-
-    syncNavigation(pageId);
-
-    if (current === target) {
+    if (activePageId() === pageId) {
+      syncNavigation(pageId);
       return true;
     }
 
-    const token = ++navigationToken;
+    const token = ++switchToken;
 
-    pages.forEach(page => {
-      if (page !== current) {
-        page.classList.remove("mirage-leaving");
-      }
-    });
+    switching = true;
+    syncNavigation(pageId);
 
-    if (current) {
-      current.classList.remove("active");
-      current.classList.add("mirage-leaving");
-      current.setAttribute("aria-hidden", "true");
-      cleanupLeavingPage(current, token);
-    }
+    /*
+     * Dim the content slightly.
+     * Keep the document layout intact.
+     */
 
-    target.classList.remove("mirage-leaving");
-    target.classList.add("active");
-    target.setAttribute("aria-hidden", "false");
+    main.classList.add("mirage-nav-dim");
 
-    pages.forEach(page => {
-      if (page !== target && page !== current) {
-        page.setAttribute("aria-hidden", "true");
-      }
-    });
+    window.setTimeout(() => {
+      if (token !== switchToken) return;
+
+      setActivePage(pageId);
+
+      /*
+       * Restore brightness on the next paint.
+       * No forced layout reads or page repositioning.
+       */
+
+      requestAnimationFrame(() => {
+        if (token !== switchToken) return;
+
+        main.classList.remove("mirage-nav-dim");
+        switching = false;
+
+        window.dispatchEvent(
+          new CustomEvent("mirage:pagechange", {
+            detail: { page: pageId }
+          })
+        );
+      });
+    }, SWITCH_MS / 2);
 
     try {
       window.scrollTo({
@@ -372,10 +375,6 @@
         ?.selectionChanged?.();
     } catch (_) {}
 
-    window.dispatchEvent(new CustomEvent("mirage:pagechange", {
-      detail: { page: pageId }
-    }));
-
     return true;
   }
 
@@ -389,16 +388,21 @@
 
       const pageId = button.dataset.page;
 
-      if (
-        !pageId ||
-        !document.getElementById(pageId)?.classList.contains("page")
-      ) {
+      if (!pageId) return;
+
+      const target = document.getElementById(pageId);
+
+      if (!target || !target.classList.contains("page")) {
         return;
       }
 
       event.preventDefault();
 
-      // Do not stop propagation: app.js still loads page data.
+      /*
+       * Do not stop propagation.
+       * app.js must still receive the click and load page data.
+       */
+
       navigate(pageId);
     }, true);
   }
@@ -416,21 +420,33 @@
       );
     });
 
-    window.setTimeout(() => {
-      applyBrand();
-      buildNav();
-    }, 0);
+    /*
+     * Keep navigation synchronized if another script
+     * changes the active page.
+     */
+
+    document.addEventListener("mirage:pagechange", event => {
+      const page = event.detail?.page;
+      if (page) syncNavigation(page);
+    });
 
     window.MIRAGE = {
       name: BRAND,
       tagline: TAGLINE,
       navigate
     };
+
+    console.info("MIRAGE navigation V3 initialized.");
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
+    document.addEventListener(
+      "DOMContentLoaded",
+      start,
+      { once: true }
+    );
   } else {
     start();
   }
 })();
+            
