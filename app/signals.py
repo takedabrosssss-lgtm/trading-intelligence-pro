@@ -65,10 +65,14 @@ def quality_gate(direction: str, indicators: dict[str, Any], strategy_model: str
     return {"passed": all(checks.values()), "checks": checks, "minimum_volume_ratio": minimum_volume, "rejection_reasons": reasons}
 
 
-def generate_signal(candles, symbol, timeframe, strategy):
-    candles = closed_candles(candles, timeframe)
-    if len(candles) < 100:
-        def generate_signal(candles, symbol, timeframe, strategy, diagnostics=None):
+
+def generate_signal(
+    candles,
+    symbol,
+    timeframe,
+    strategy,
+    diagnostics=None,
+):
     def reject(reason):
         if diagnostics is not None:
             diagnostics["reason"] = reason
@@ -80,13 +84,25 @@ def generate_signal(candles, symbol, timeframe, strategy):
         return reject("insufficient_candles")
 
     model = STRATEGY_BY_TIMEFRAME.get(timeframe)
+
     if not model:
         return reject("unsupported_timeframe")
 
-    analysis = analyze_strategy(candles, model)
+    analyzer_diagnostics = {}
+
+    analysis = analyze_strategy(
+        candles,
+        model,
+        diagnostics=analyzer_diagnostics,
+    )
 
     if not analysis:
-        return reject("strategy_no_setup")
+        return reject(
+            analyzer_diagnostics.get(
+                "reason",
+                "strategy_no_setup",
+            )
+        )
 
     direction = analysis["direction"]
     score = float(analysis["score"])
@@ -157,16 +173,43 @@ def generate_signal(candles, symbol, timeframe, strategy):
     }
 
     if diagnostics is not None:
-        diagnostics["reason"] = "candidate"
+        diagnostics["reason"] = (
+            "candidate"
+            if eligible
+            else "quality_filter_rejected"
+        )
 
     return result
-    if not signal or signal.get("status") != "new" or not is_quality_signal_values(signal.get("direction"), signal.get("score"), signal.get("grade")):
-        return False
-    entry, stop, target = signal.get("entry_price"), signal.get("stop_loss"), signal.get("take_profit")
-    if not all(isinstance(v, (int, float)) and v > 0 for v in (entry, stop, target)):
-        return False
-    return stop < entry < target if signal["direction"] == "BUY" else target < entry < stop
 
+
+def is_valid_signal(signal):
+    if (
+        not signal
+        or signal.get("status") != "new"
+        or not is_quality_signal_values(
+            signal.get("direction"),
+            signal.get("score"),
+            signal.get("grade"),
+        )
+    ):
+        return False
+
+    entry = signal.get("entry_price")
+    stop = signal.get("stop_loss")
+    target = signal.get("take_profit")
+
+    if not all(
+        isinstance(value, (int, float)) and value > 0
+        for value in (entry, stop, target)
+    ):
+        return False
+
+    return (
+        stop < entry < target
+        if signal["direction"] == "BUY"
+        else target < entry < stop
+    )
+    
 
 def is_duplicate_signal(existing_signals, new_signal):
     active_statuses = {"new", "eligible", "sent", "paper_opened", "paper_closed", "paper_skipped"}
