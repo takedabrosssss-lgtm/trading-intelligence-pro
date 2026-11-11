@@ -265,11 +265,184 @@ async def deliver_pending_signals():
         db.close()
 
     return delivered
-
-
 async def scan_market():
     db = SessionLocal()
     saved = 0
+    stats = Counter()
+
+    try:
+        for symbol in SYMBOLS:
+            for timeframe in TIMEFRAMES:
+                stats["combinations"] += 1
+
+                try:
+                    # 1. Получение рыночных данных
+                    try:
+                        candles = await market_data.get_klines(
+                            symbol,
+                            timeframe,
+                            200,
+                        )
+
+                        stats["data_ok"] += 1
+                        stats["candles_total"] += len(candles)
+
+                    except Exception:
+                        stats["data_errors"] += 1
+
+                        logger.exception(
+                            "Market data failed for %s %s",
+                            symbol,
+                            timeframe,
+                        )
+                        continue
+
+                    # 2. Анализ стратегии
+                    diagnostics = {}
+
+                    signal = generate_signal(
+                        candles,
+                        symbol,
+                        timeframe,
+                        STRATEGIES[timeframe],
+                        diagnostics=diagnostics,
+                    )
+
+                    if not signal:
+                        reason = diagnostics.get(
+                            "reason",
+                            "unknown",
+                        )
+
+                        stats[f"rejected_{reason}"] += 1
+                        continue
+
+                    stats["analysis_candidates"] += 1
+
+                    # 3. Проверка Grade и силы сигнала
+                    if not signal["base_quality"]:
+                        stats["rejected_grade_or_strength"] += 1
+
+                    # 4. Проверка независимых фильтров
+                    gate = signal["quality_gate"]
+                    checks = gate["checks"]
+
+                    if not checks["directional_movement"]:
+                        stats["rejected_di"] += 1
+
+                    if not checks["ema_slope"]:
+                        stats["rejected_ema"] += 1
+
+                    if not checks["volume_participation"]:
+                        stats["rejected_volume"] += 1
+
+                    if not signal["eligible"]:
+                        stats["rejected_quality_total"] += 1
+                        continue
+
+                    # 5. Защита от повторных сигналов
+                    if already_exists(db, signal):
+                        stats["duplicate_cooldown"] += 1
+                        continue
+
+                    # 6. Сохранение сигнала
+                    db.add(
+                        Signal(
+                            symbol=signal["symbol"],
+                            market="crypto",
+                            timeframe=signal["timeframe"],
+                            direction=signal["direction"],
+                            grade=signal["grade"],
+                            score=signal["score"],
+                            confidence=signal.get("confidence"),
+                            entry_price=signal["entry_price"],
+                            stop_loss=signal["stop_loss"],
+                            take_profit=signal["take_profit"],
+                            strategy=signal["strategy"],
+                            reasoning="; ".join(
+                                signal.get("reasoning") or []
+                            ),
+                            indicators=signal.get("indicators"),
+                            status="new",
+                        )
+                    )
+
+                    db.commit()
+
+                    saved += 1
+                    stats["eligible_saved"] += 1
+
+                    logger.info(
+                        "Signal saved %s %s %s strength=%.0f grade=%s",
+                        symbol,
+                        timeframe,
+                        signal["direction"],
+                        signal_strength(
+                            signal["direction"],
+                            signal["score"],
+                        ),
+                        signal["grade"],
+                    )
+
+                except Exception:
+                    db.rollback()
+                    stats["scan_errors"] += 1
+
+                    logger.exception(
+                        "Scan failed for %s %s",
+                        symbol,
+                        timeframe,
+                    )
+
+        # Итоговая диагностика всего цикла
+        logger.info(
+            "SCAN DIAGNOSTICS | "
+            "combinations=%s | "
+            "data_ok=%s | "
+            "data_errors=%s | "
+            "candles_total=%s | "
+            "insufficient_candles=%s | "
+            "strategy_no_setup=%s | "
+            "invalid_analysis=%s | "
+            "invalid_risk_levels=%s | "
+            "candidates=%s | "
+            "grade_strength_rejected=%s | "
+            "DI_rejected=%s | "
+            "EMA_rejected=%s | "
+            "volume_rejected=%s | "
+            "quality_rejected=%s | "
+            "duplicate_cooldown=%s | "
+            "saved=%s | "
+            "scan_errors=%s",
+            stats["combinations"],
+            stats["data_ok"],
+            stats["data_errors"],
+            stats["candles_total"],
+            stats["rejected_insufficient_candles"],
+            stats["rejected_strategy_no_setup"],
+            stats["rejected_invalid_analysis"],
+            stats["rejected_invalid_risk_levels"],
+            stats["analysis_candidates"],
+            stats["rejected_grade_or_strength"],
+            stats["rejected_di"],
+            stats["rejected_ema"],
+            stats["rejected_volume"],
+            stats["rejected_quality_total"],
+            stats["duplicate_cooldown"],
+            saved,
+            stats["scan_errors"],
+        )
+
+        logger.info(
+            "Scan completed. New quality signals: %s",
+            saved,
+        )
+
+    finally:
+        db.close()
+
+    return saved
+
 
     try:
         for symbol in SYMBOLS:
