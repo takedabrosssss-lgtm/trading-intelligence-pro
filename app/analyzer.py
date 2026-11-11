@@ -405,6 +405,148 @@ def analyze_strategy(
             score = 84 + min(6, (volume_ratio - 1.2) * 5)
             reasons = [
                 "Close above previous 20-candle high",
+
+def analyze_strategy(
+    candles: list[dict[str, Any]],
+    strategy: str,
+    diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+
+    def reject(reason):
+        if diagnostics is not None:
+            diagnostics["reason"] = reason
+        return None
+
+    if len(candles) < 100:
+        return reject("insufficient_candles")
+
+    indicators = _indicators(candles)
+    price = float(candles[-1]["close"])
+
+    ema20 = indicators["ema20"]
+    ema50 = indicators["ema50"]
+    rsi = indicators["rsi"]
+    macd = indicators["macd"]
+    atr = indicators["atr"]
+    adx_data = indicators["adx"]
+    volume_ratio = indicators["volume_ratio"]
+
+    if not all((ema20, ema50, rsi is not None, macd, atr, adx_data)):
+        return reject("missing_indicators")
+
+    if price <= 0 or atr <= 0:
+        return reject("invalid_market_values")
+
+    adx = adx_data["adx"]
+    histogram = macd["histogram"]
+
+    bullish = ema20 > ema50
+    bearish = ema20 < ema50
+
+    direction = "NEUTRAL"
+    score = 50.0
+    reasons = []
+
+    # 1. TREND FOLLOWING
+    if strategy == "trend_following":
+
+        if adx < 18:
+            return reject("trend_adx_below_18")
+
+        if bullish and price > ema20 and histogram > 0 and 52 <= rsi <= 72:
+            direction = "BUY"
+            score = 82 + min(8, (adx - 18) * 0.35)
+            reasons = [
+                "EMA20 above EMA50",
+                "Price above EMA20",
+                "Positive MACD histogram",
+                "RSI confirms bullish momentum",
+                "ADX confirms trend strength",
+            ]
+
+        elif bearish and price < ema20 and histogram < 0 and 28 <= rsi <= 48:
+            direction = "SELL"
+            score = 18 - min(8, (adx - 18) * 0.35)
+            reasons = [
+                "EMA20 below EMA50",
+                "Price below EMA20",
+                "Negative MACD histogram",
+                "RSI confirms bearish momentum",
+                "ADX confirms trend strength",
+            ]
+
+    # 2. EMA PULLBACK
+    elif strategy == "ema_pullback":
+
+        previous_close = float(candles[-2]["close"])
+        previous_ema20 = indicators["ema20_previous"]
+
+        if previous_ema20 is None:
+            return reject("pullback_missing_ema")
+
+        if adx < 16:
+            return reject("pullback_adx_below_16")
+
+        if (
+            bullish
+            and previous_close <= previous_ema20
+            and price > ema20
+            and histogram > 0
+            and 48 <= rsi <= 68
+        ):
+            direction = "BUY"
+            score = 83 + min(7, (adx - 16) * 0.3)
+            reasons = [
+                "Higher-timeframe bullish EMA alignment",
+                "Pullback to EMA20 and close reclaim",
+                "MACD momentum turned positive",
+                "RSI confirms recovery",
+            ]
+
+        elif (
+            bearish
+            and previous_close >= previous_ema20
+            and price < ema20
+            and histogram < 0
+            and 32 <= rsi <= 52
+        ):
+            direction = "SELL"
+            score = 17 - min(7, (adx - 16) * 0.3)
+            reasons = [
+                "Higher-timeframe bearish EMA alignment",
+                "Pullback to EMA20 and close rejection",
+                "MACD momentum turned negative",
+                "RSI confirms weakness",
+            ]
+
+    # 3. BREAKOUT
+    elif strategy == "breakout":
+
+        if len(candles) < 30:
+            return reject("breakout_insufficient_candles")
+
+        if adx < 18:
+            return reject("breakout_adx_below_18")
+
+        if volume_ratio is None:
+            return reject("breakout_missing_volume")
+
+        previous = candles[-21:-1]
+
+        range_high = max(float(c["high"]) for c in previous)
+        range_low = min(float(c["low"]) for c in previous)
+
+        if (
+            price > range_high
+            and bullish
+            and histogram > 0
+            and volume_ratio >= 1.2
+            and 50 <= rsi <= 75
+        ):
+            direction = "BUY"
+            score = 84 + min(6, (volume_ratio - 1.2) * 5)
+            reasons = [
+                "Close above previous 20-candle high",
                 "Volume above 20-candle average",
                 "Bullish EMA alignment",
                 "Positive MACD momentum",
@@ -430,8 +572,20 @@ def analyze_strategy(
         raise ValueError(f"Unknown strategy: {strategy}")
 
     if direction == "NEUTRAL":
-        return None
+        return reject(f"{strategy}_no_setup")
 
+    if diagnostics is not None:
+        diagnostics["reason"] = "candidate"
+
+    return _result(
+        direction,
+        score,
+        price,
+        indicators,
+        strategy,
+        reasons,
+    )
+    
     return _result(
         direction,
         score,
