@@ -1,0 +1,273 @@
+
+/* MIRAGE 4.1 — compact section navigation */
+
+.mirage41-nav {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+
+  margin: 0 -1px 13px;
+  padding: 9px 11px 8px;
+
+  background: rgba(5, 14, 10, .93);
+
+  border: 1px solid rgba(132, 174, 157, .14);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+}
+
+/* Верхняя строка */
+
+.mirage41-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.mirage41-nav-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+
+  color: #d9e9e1;
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+.mirage41-nav-title small {
+  color: #779487;
+  font-size: 9px;
+  letter-spacing: .07em;
+  margin-left: 2px;
+}
+
+.mirage41-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+
+  background: #38d99a;
+  box-shadow: 0 0 9px #38d99a;
+}
+
+/* Поиск */
+
+.mirage41-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+
+  padding: 0 10px;
+  border-radius: 10px;
+
+  background: rgba(255, 255, 255, .045);
+  border: 1px solid rgba(151, 190, 173, .14);
+
+  color: #8ca99b;
+}
+
+.mirage41-search-wrap > span {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.mirage41-search-wrap input {
+  width: 100%;
+  min-width: 0;
+
+  border: 0;
+  outline: 0;
+  background: transparent;
+
+  color: #e7f4ed;
+  font: 500 12px "DM Sans", sans-serif;
+}
+
+.mirage41-search-wrap input::placeholder {
+  color: #71887e;
+}
+
+.mirage41-search-wrap kbd {
+  color: #6f8c7d;
+  font-size: 11px;
+}
+
+/* Быстрые подвкладки */
+
+.mirage41-links {
+  display: flex;
+  gap: 7px;
+
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+
+  padding: 8px 1px 1px;
+}
+
+.mirage41-links::-webkit-scrollbar {
+  display: none;
+}
+
+.mirage41-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+
+  flex: 0 0 auto;
+  min-height: 31px;
+  padding: 0 10px;
+
+  border-radius: 9px;
+
+  color: #c5d8ce;
+  background: rgba(255, 255, 255, .035);
+  border: 1px solid rgba(145, 184, 165, .13);
+
+  font: 600 10px "DM Sans", sans-serif;
+  white-space: nowrap;
+
+  cursor: pointer;
+
+  transition:
+    background .18s,
+    border-color .18s,
+    transform .18s;
+}
+
+.mirage41-link:active {
+  transform: scale(.97);
+}
+
+.mirage41-link:hover {
+  background: rgba(53, 218, 151, .10);
+  border-color: rgba(53, 218, 151, .32);
+}
+
+.mirage41-link-index {
+  color: #54dba2;
+  font-size: 9px;
+  letter-spacing: .05em;
+}
+
+.mirage41-link i,
+.mirage41-result i {
+  color: #6e9b85;
+  font-style: normal;
+}
+
+/* Поисковая выдача */
+
+.mirage41-empty,
+.mirage41-no-results {
+  padding: 8px 2px 2px;
+  color: #7e968a;
+  font-size: 11px;
+}
+
+.mirage41-results {
+  max-height: min(44vh, 340px);
+  overflow: auto;
+  padding-top: 7px;
+}
+
+.mirage41-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  width: 100%;
+  padding: 10px 9px;
+
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid rgba(150, 185, 168, .09);
+
+  background: transparent;
+  color: #dcebe3;
+
+  cursor: pointer;
+}
+
+.mirage41-result span {
+  display: grid;
+  gap: 3px;
+}
+
+.mirage41-result b {
+  font-size: 12px;
+}
+
+.mirage41-result small {
+  color: #7f998b;
+  font-size: 10px;
+}
+
+/* Подсветка найденного блока */
+
+.mirage41-focus {
+  outline: 1px solid rgba(53, 218, 151, .7) !important;
+  outline-offset: 5px;
+}
+
+/* Мобильная адаптация */
+
+@media (max-width: 520px) {
+  .mirage41-nav {
+    padding: 8px 9px 7px;
+    margin-bottom: 11px;
+  }
+
+  .mirage41-nav-title {
+    font-size: 9px;
+    gap: 5px;
+  }
+
+  .mirage41-nav-title small {
+    display: none;
+  }
+
+  .mirage41-search-wrap {
+    height: 34px;
+  }
+
+  .mirage41-search-wrap input {
+    font-size: 11px;
+  }
+
+  .mirage41-link {
+    min-height: 30px;
+    padding: 0 9px;
+    font-size: 10px;
+  }
+}
+
+/* SPECTRE MODE — фиолетовый акцент */
+
+body[data-mirage-mode="spectre"] .mirage41-nav,
+html[data-mirage-mode="spectre"] .mirage41-nav {
+  border-color: rgba(164, 125, 255, .23);
+  box-shadow: 0 8px 25px rgba(55, 31, 105, .2);
+}
+
+body[data-mirage-mode="spectre"] .mirage41-dot,
+html[data-mirage-mode="spectre"] .mirage41-dot {
+  background: #b38aff;
+  box-shadow: 0 0 9px #a77aff;
+}
+
+body[data-mirage-mode="spectre"] .mirage41-link-index,
+html[data-mirage-mode="spectre"] .mirage41-link-index {
+  color: #b89aff;
+  }
