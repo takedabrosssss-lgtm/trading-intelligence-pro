@@ -394,44 +394,18 @@ async def scan_market():
                         timeframe,
                     )
 
+        
         # Итоговая диагностика всего цикла
-        logger.info(
-            "SCAN DIAGNOSTICS | "
-            "combinations=%s | "
-            "data_ok=%s | "
-            "data_errors=%s | "
-            "candles_total=%s | "
-            "insufficient_candles=%s | "
-            "strategy_no_setup=%s | "
-            "invalid_analysis=%s | "
-            "invalid_risk_levels=%s | "
-            "candidates=%s | "
-            "grade_strength_rejected=%s | "
-            "DI_rejected=%s | "
-            "EMA_rejected=%s | "
-            "volume_rejected=%s | "
-            "quality_rejected=%s | "
-            "duplicate_cooldown=%s | "
-            "saved=%s | "
-            "scan_errors=%s",
-            stats["combinations"],
-            stats["data_ok"],
-            stats["data_errors"],
-            stats["candles_total"],
-            stats["rejected_insufficient_candles"],
-            stats["rejected_strategy_no_setup"],
-            stats["rejected_invalid_analysis"],
-            stats["rejected_invalid_risk_levels"],
-            stats["analysis_candidates"],
-            stats["rejected_grade_or_strength"],
-            stats["rejected_di"],
-            stats["rejected_ema"],
-            stats["rejected_volume"],
-            stats["rejected_quality_total"],
-            stats["duplicate_cooldown"],
-            saved,
-            stats["scan_errors"],
+        summary = " | ".join(
+            f"{key}={value}"
+            for key, value in sorted(stats.items())
         )
+
+        logger.info(
+            "SCAN DIAGNOSTICS | %s",
+            summary,
+        )
+        
 
         logger.info(
             "Scan completed. New quality signals: %s",
