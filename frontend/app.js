@@ -1072,6 +1072,7 @@
   /* EVENTS */
 
   function bindEvents() {
+        let pageActivationTimer = null;
     document.addEventListener("click", event => {
       const marketButton =
         event.target.closest("[data-select-symbol]");
@@ -1106,17 +1107,24 @@
         loadChart();
         return;
       }
-
       const pageButton =
         event.target.closest("[data-page]");
 
       if (pageButton) {
-        const page = pageButton.dataset.page;
+        clearTimeout(pageActivationTimer);
 
-        setTimeout(() => {
-          activatePage(page);
+        pageActivationTimer = setTimeout(() => {
+          const activePage =
+            document.querySelector("main .page.active")?.id;
+
+          if (activePage) {
+            activatePage(activePage);
+          }
+
+          pageActivationTimer = null;
         }, 100);
       }
+      
     });
 
     $("#run-analysis")?.addEventListener(
