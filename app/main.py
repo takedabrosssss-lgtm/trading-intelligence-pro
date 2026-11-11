@@ -22,12 +22,14 @@ from app.analyzer import analyze_market
 from app.worker import run_worker
 from app.intelligence_api import build_router
 from app.robustness_api import build_robustness_router
+from app.mirage4_api import build_mirage4_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-intelligence")
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 TELEGRAM_POLLING_LOCK_ID = 81420312
+APP_STARTED_AT = time.time()
 
 
 def validate_telegram_init_data(init_data: str) -> dict:
@@ -101,6 +103,7 @@ async def lifespan(app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
+        # Create only missing accounts. Existing balances and account rows are never reset.
         for name in ("Scalping", "Intraday", "Swing", "Position"):
             account = db.query(PaperAccount).filter(PaperAccount.name == name).first()
             if not account:
@@ -111,36 +114,44 @@ async def lifespan(app: FastAPI):
         db.commit()
     finally:
         db.close()
-    background_tasks = [
-        asyncio.create_task(run_worker(), name="market-signal-scanner"),
-        asyncio.create_task(run_bot_supervisor(), name="telegram-bot-polling"),
-    ]
+
+    worker_task = asyncio.create_task(run_worker(), name="market-signal-scanner")
+    bot_task = asyncio.create_task(run_bot_supervisor(), name="telegram-bot-polling")
+    app.state.worker_task = worker_task
+    app.state.bot_task = bot_task
     logger.info("Trading Intelligence PRO started")
     logger.info("Background scanner and Telegram bot tasks scheduled")
     try:
         yield
     finally:
-        for task in background_tasks:
+        for task in (worker_task, bot_task):
             task.cancel()
-        await asyncio.gather(*background_tasks, return_exceptions=True)
+        await asyncio.gather(worker_task, bot_task, return_exceptions=True)
         logger.info("Trading Intelligence PRO stopped")
 
 
-app = FastAPI(title="Trading Intelligence PRO", version="2.2.0", lifespan=lifespan)
+app = FastAPI(title="MIRAGE", version="4.0.0", lifespan=lifespan)
 app.include_router(build_router(require_user))
-# MIRAGE 2.6: authenticated read-only robustness research.
 app.include_router(build_robustness_router(require_user))
+app.include_router(build_mirage4_router(require_user, app, APP_STARTED_AT))
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
-    return {"status": "ok", "service": "Trading Intelligence PRO"}
+    worker = getattr(app.state, "worker_task", None)
+    worker_running = bool(worker and not worker.done())
+    return {
+        "status": "ok" if worker_running else "degraded",
+        "service": "MIRAGE",
+        "paper_trading_only": True,
+        "scanner_task": "running" if worker_running else "not_running",
+    }
 
 
 @app.get("/api/status")
 async def api_status(user: dict = Header(default=None)):
     return {
-        "status": "online", "service": "Trading Intelligence PRO",
+        "status": "online", "service": "MIRAGE",
         "market_data": "Binance Spot with Kraken Spot fallback",
         "mode": "paper_trading",
     }
@@ -179,10 +190,16 @@ async def analysis(
     symbol: str, interval: str = Query(default="1h"),
     user=__import__("fastapi").Depends(require_user),
 ):
+    allowed = {"1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"}
+    if interval not in allowed:
+        raise HTTPException(400, "Unsupported interval")
+    symbol = symbol.upper()
+    if not symbol.endswith("USDT") or not symbol[:-4].isalnum():
+        raise HTTPException(400, "Invalid symbol")
     try:
-        candles = await market_data.get_klines(symbol.upper(), interval, 200)
+        candles = await market_data.get_klines(symbol, interval, 200)
         result = analyze_market(candles)
-        result["symbol"] = symbol.upper()
+        result["symbol"] = symbol
         result["interval"] = interval
         return result
     except Exception as exc:
