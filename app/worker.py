@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from html import escape
 
