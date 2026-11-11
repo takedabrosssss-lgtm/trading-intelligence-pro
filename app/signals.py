@@ -68,40 +68,98 @@ def quality_gate(direction: str, indicators: dict[str, Any], strategy_model: str
 def generate_signal(candles, symbol, timeframe, strategy):
     candles = closed_candles(candles, timeframe)
     if len(candles) < 100:
+        def generate_signal(candles, symbol, timeframe, strategy, diagnostics=None):
+    def reject(reason):
+        if diagnostics is not None:
+            diagnostics["reason"] = reason
         return None
+
+    candles = closed_candles(candles, timeframe)
+
+    if len(candles) < 100:
+        return reject("insufficient_candles")
+
     model = STRATEGY_BY_TIMEFRAME.get(timeframe)
     if not model:
-        return None
+        return reject("unsupported_timeframe")
+
     analysis = analyze_strategy(candles, model)
+
     if not analysis:
-        return None
-    direction, score, grade = analysis["direction"], float(analysis["score"]), analysis["grade"]
+        return reject("strategy_no_setup")
+
+    direction = analysis["direction"]
+    score = float(analysis["score"])
+    grade = analysis["grade"]
     entry = float(analysis["entry_price"])
+
     indicators = analysis.get("indicators") or {}
     atr = indicators.get("atr")
-    if direction not in {"BUY", "SELL"} or atr is None or float(atr) <= 0 or entry <= 0:
-        return None
-    distance = float(atr) * ATR_STOP_MULTIPLIER
-    stop, target = (entry-distance, entry+distance*REWARD_RISK_RATIO) if direction == "BUY" else (entry+distance, entry-distance*REWARD_RISK_RATIO)
-    if stop <= 0 or target <= 0:
-        return None
 
-    base_quality = is_quality_signal_values(direction, score, grade)
-    gate = quality_gate(direction, indicators, model)
+    if (
+        direction not in {"BUY", "SELL"}
+        or atr is None
+        or float(atr) <= 0
+        or entry <= 0
+    ):
+        return reject("invalid_analysis")
+
+    distance = float(atr) * ATR_STOP_MULTIPLIER
+
+    if direction == "BUY":
+        stop = entry - distance
+        target = entry + distance * REWARD_RISK_RATIO
+    else:
+        stop = entry + distance
+        target = entry - distance * REWARD_RISK_RATIO
+
+    if stop <= 0 or target <= 0:
+        return reject("invalid_risk_levels")
+
+    base_quality = is_quality_signal_values(
+        direction,
+        score,
+        grade,
+    )
+
+    gate = quality_gate(
+        direction,
+        indicators,
+        model,
+    )
+
     eligible = base_quality and gate["passed"]
-    indicators = {**indicators, "quality_gate": gate}
-    return {
-        "symbol": symbol, "market": "crypto", "timeframe": timeframe,
-        "direction": direction, "grade": grade, "score": score,
-        "confidence": signal_strength(direction, score),
-        "entry_price": entry, "stop_loss": stop, "take_profit": target,
-        "strategy": strategy, "strategy_model": model,
-        "reasoning": analysis.get("reasoning", []), "indicators": indicators,
-        "quality_gate": gate, "status": "new" if eligible else "filtered", "eligible": eligible,
+
+    indicators = {
+        **indicators,
+        "quality_gate": gate,
     }
 
+    result = {
+        "symbol": symbol,
+        "market": "crypto",
+        "timeframe": timeframe,
+        "direction": direction,
+        "grade": grade,
+        "score": score,
+        "confidence": signal_strength(direction, score),
+        "entry_price": entry,
+        "stop_loss": stop,
+        "take_profit": target,
+        "strategy": strategy,
+        "strategy_model": model,
+        "reasoning": analysis.get("reasoning", []),
+        "indicators": indicators,
+        "quality_gate": gate,
+        "base_quality": base_quality,
+        "status": "new" if eligible else "filtered",
+        "eligible": eligible,
+    }
 
-def is_eligible_for_auto_paper_trade(signal):
+    if diagnostics is not None:
+        diagnostics["reason"] = "candidate"
+
+    return result
     if not signal or signal.get("status") != "new" or not is_quality_signal_values(signal.get("direction"), signal.get("score"), signal.get("grade")):
         return False
     entry, stop, target = signal.get("entry_price"), signal.get("stop_loss"), signal.get("take_profit")
