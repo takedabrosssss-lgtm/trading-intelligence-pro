@@ -361,34 +361,16 @@
         input.blur();
       }
     });
-
-    document.addEventListener("click", event => {
-      const page = event.target
-        .closest("[data-page]")?.dataset.page;
-
-      if (PAGES[page]) {
-        window.setTimeout(schedule, 80);
-      }
-    });
+    window.addEventListener(
+      "mirage:pagechange",
+      schedule
+    );
 
     document.addEventListener(
       "mirage:modechange",
       schedule
     );
-
-    const main = $("main");
-
-    if (main) {
-      const observer = new MutationObserver(schedule);
-
-      observer.observe(main, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["class", "id"]
-      });
-    }
-
+    
     schedule();
   }
 
