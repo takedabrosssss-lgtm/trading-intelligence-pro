@@ -1,11 +1,14 @@
 (() => {
   "use strict";
-  if (window.__MIRAGE_BRAND_NAV__) return;
-  window.__MIRAGE_BRAND_NAV__ = true;
+
+  if (window.__MIRAGE_BRAND_NAV_V2__) return;
+  window.__MIRAGE_BRAND_NAV_V2__ = true;
 
   const BRAND = "MIRAGE";
   const TAGLINE = "SEE BEYOND THE MARKET";
   const LOGO = "/mirage-avatar-512.png";
+
+  const EXIT_MS = 220;
 
   const tabs = [
     ["dashboard", "Обзор", "home"],
@@ -23,11 +26,13 @@
     portfolio: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2"/></svg>'
   };
 
+  let navigationToken = 0;
+
   function installStyles() {
-    if (document.getElementById("mirage-brand-nav-styles")) return;
+    if (document.getElementById("mirage-brand-nav-styles-v2")) return;
 
     const style = document.createElement("style");
-    style.id = "mirage-brand-nav-styles";
+    style.id = "mirage-brand-nav-styles-v2";
 
     style.textContent = `
       .brand-mark {
@@ -39,7 +44,7 @@
         border:1px solid rgba(54,235,183,.42)!important;
         background:#030807!important;
         box-shadow:0 0 22px rgba(0,220,160,.12),
-        inset 0 1px 0 rgba(255,255,255,.18)!important;
+          inset 0 1px 0 rgba(255,255,255,.18)!important;
       }
 
       .brand-mark img {
@@ -91,6 +96,7 @@
         padding:7px 1px 6px!important;
         box-sizing:border-box!important;
         white-space:nowrap!important;
+        -webkit-tap-highlight-color:transparent!important;
       }
 
       .bottom-nav>.nav-item>span {
@@ -122,6 +128,57 @@
         filter:drop-shadow(0 0 5px rgba(56,229,166,.45));
       }
 
+      /* MIRAGE 4.3 — smooth page crossfade */
+      main {
+        position:relative!important;
+        isolation:isolate;
+      }
+
+      main .page.active {
+        display:block!important;
+        animation:mirage-page-enter-v2 460ms
+          cubic-bezier(.16,1,.3,1) both!important;
+        backface-visibility:hidden;
+        will-change:opacity,transform;
+      }
+
+      main .page.mirage-leaving {
+        display:block!important;
+        position:absolute!important;
+        top:0!important;
+        left:0!important;
+        right:0!important;
+        width:100%!important;
+        z-index:4!important;
+        pointer-events:none!important;
+        animation:mirage-page-exit-v2 220ms
+          cubic-bezier(.4,0,.2,1) both!important;
+        backface-visibility:hidden;
+        will-change:opacity,transform;
+      }
+
+      @keyframes mirage-page-enter-v2 {
+        from {
+          opacity:0;
+          transform:translate3d(0,10px,0);
+        }
+        to {
+          opacity:1;
+          transform:translate3d(0,0,0);
+        }
+      }
+
+      @keyframes mirage-page-exit-v2 {
+        from {
+          opacity:1;
+          transform:translate3d(0,0,0);
+        }
+        to {
+          opacity:0;
+          transform:translate3d(0,-4px,0);
+        }
+      }
+
       @media(max-width:370px) {
         .bottom-nav>.nav-item>small {
           font-size:8px!important;
@@ -130,6 +187,16 @@
         .bottom-nav {
           gap:1px!important;
           padding:5px!important;
+        }
+      }
+
+      @media(prefers-reduced-motion:reduce) {
+        main .page.active {
+          animation-duration:120ms!important;
+        }
+
+        main .page.mirage-leaving {
+          animation-duration:120ms!important;
         }
       }
     `;
@@ -158,7 +225,8 @@
 
     const mark = document.querySelector(".brand-mark");
     if (mark) {
-      mark.innerHTML = `<img src="${LOGO}" alt="MIRAGE" draggable="false">`;
+      mark.innerHTML =
+        `<img src="${LOGO}" alt="MIRAGE" draggable="false">`;
     }
 
     const copy = document.querySelector(".brand-copy");
@@ -173,7 +241,9 @@
     if (eyebrow) eyebrow.textContent = TAGLINE;
 
     document.querySelectorAll(".hero-watermark,.placeholder-mark")
-      .forEach(el => el.textContent = "M");
+      .forEach(el => {
+        el.textContent = "M";
+      });
   }
 
   function buildNav() {
@@ -181,56 +251,140 @@
     if (!nav) return;
 
     const activePage =
-      document.querySelector(".page.active")?.id || "dashboard";
+      document.querySelector("main .page.active")?.id || "dashboard";
 
-    nav.innerHTML = tabs.map(([page, label, icon]) =>
-      `<button
-        type="button"
-        class="nav-item${page === activePage ? " active" : ""}"
-        data-page="${page}"
-        aria-label="${label}"
-        aria-current="${page === activePage ? "page" : "false"}">
-        <span>${icons[icon]}</span>
-        <small>${label}</small>
-      </button>`
-    ).join("");
+    nav.innerHTML = tabs.map(([page, label, icon]) => {
+      const active = page === activePage;
+
+      return `
+        <button
+          type="button"
+          class="nav-item${active ? " active" : ""}"
+          data-page="${page}"
+          aria-label="${label}"
+          aria-current="${active ? "page" : "false"}">
+          <span>${icons[icon]}</span>
+          <small>${label}</small>
+        </button>
+      `;
+    }).join("");
 
     nav.setAttribute("aria-label", "Основная навигация");
+  }
+
+  function syncNavigation(pageId) {
+    document.querySelectorAll(".bottom-nav [data-page]")
+      .forEach(button => {
+        const active = button.dataset.page === pageId;
+
+        button.classList.toggle("active", active);
+        button.setAttribute(
+          "aria-current",
+          active ? "page" : "false"
+        );
+      });
+  }
+
+  function cleanupLeavingPage(page, token) {
+    if (!page) return;
+
+    const cleanup = () => {
+      if (token !== navigationToken &&
+          page.classList.contains("active")) {
+        return;
+      }
+
+      page.classList.remove("mirage-leaving");
+    };
+
+    page.addEventListener("animationend", event => {
+      if (
+        event.target === page &&
+        event.animationName === "mirage-page-exit-v2"
+      ) {
+        cleanup();
+      }
+    }, { once: true });
+
+    window.setTimeout(cleanup, EXIT_MS + 100);
   }
 
   function navigate(pageId) {
     const target = document.getElementById(pageId);
 
-    if (!target || !target.classList.contains("page")) return;
+    if (!target || !target.classList.contains("page")) {
+      return false;
+    }
 
-    document.querySelectorAll("main .page").forEach(page => {
-      const active = page === target;
+    const pages = [...document.querySelectorAll("main .page")];
 
-      page.classList.toggle("active", active);
-      page.setAttribute("aria-hidden", active ? "false" : "true");
+    if (!pages.includes(target)) {
+      return false;
+    }
+
+    const current = pages.find(page =>
+      page.classList.contains("active")
+    );
+
+    syncNavigation(pageId);
+
+    if (current === target) {
+      return true;
+    }
+
+    const token = ++navigationToken;
+
+    pages.forEach(page => {
+      if (page !== current) {
+        page.classList.remove("mirage-leaving");
+      }
     });
 
-    document.querySelectorAll(".bottom-nav [data-page]").forEach(button => {
-      const active = button.dataset.page === pageId;
+    if (current) {
+      current.classList.remove("active");
+      current.classList.add("mirage-leaving");
+      current.setAttribute("aria-hidden", "true");
+      cleanupLeavingPage(current, token);
+    }
 
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-current", active ? "page" : "false");
+    target.classList.remove("mirage-leaving");
+    target.classList.add("active");
+    target.setAttribute("aria-hidden", "false");
+
+    pages.forEach(page => {
+      if (page !== target && page !== current) {
+        page.setAttribute("aria-hidden", "true");
+      }
     });
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto"
+      });
+    } catch (_) {
+      window.scrollTo(0, 0);
+    }
+
+    try {
+      window.Telegram?.WebApp?.HapticFeedback
+        ?.selectionChanged?.();
     } catch (_) {}
+
+    window.dispatchEvent(new CustomEvent("mirage:pagechange", {
+      detail: { page: pageId }
+    }));
+
+    return true;
   }
 
-  function start() {
-    installStyles();
-    applyBrand();
-    buildNav();
-
+  function bindNavigation() {
     document.addEventListener("click", event => {
-      const button = event.target.closest("[data-page]");
+      const button = event.target?.closest
+        ? event.target.closest("[data-page]")
+        : null;
+
       if (!button) return;
 
       const pageId = button.dataset.page;
@@ -238,10 +392,28 @@
       if (
         !pageId ||
         !document.getElementById(pageId)?.classList.contains("page")
-      ) return;
+      ) {
+        return;
+      }
 
       event.preventDefault();
+
+      // Do not stop propagation: app.js still loads page data.
       navigate(pageId);
+    }, true);
+  }
+
+  function start() {
+    installStyles();
+    applyBrand();
+    buildNav();
+    bindNavigation();
+
+    document.querySelectorAll("main .page").forEach(page => {
+      page.setAttribute(
+        "aria-hidden",
+        page.classList.contains("active") ? "false" : "true"
+      );
     });
 
     window.setTimeout(() => {
