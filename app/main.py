@@ -24,6 +24,7 @@ from app.intelligence_api import build_router
 from app.robustness_api import build_robustness_router
 from app.mirage4_api import build_mirage4_router
 from app.signal_intelligence_api import build_signal_intelligence_router
+from app.news_api import build_news_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-intelligence")
@@ -136,6 +137,7 @@ app.include_router(build_router(require_user))
 app.include_router(build_robustness_router(require_user))
 app.include_router(build_mirage4_router(require_user, app, APP_STARTED_AT))
 app.include_router(build_signal_intelligence_router(require_user))
+app.include_router(build_news_router(require_user))
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])
