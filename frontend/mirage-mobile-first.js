@@ -64,7 +64,7 @@
       link = document.createElement("link");
       link.id = "mirage-mobile-first-css";
       link.rel = "stylesheet";
-      link.href = "mirage-mobile-first.css?v=2";
+      link.href = "mirage-mobile-first.css?v=3";
     }
     document.head.appendChild(link);
   }
