@@ -64,14 +64,17 @@
       link = document.createElement("link");
       link.id = "mirage-mobile-first-css";
       link.rel = "stylesheet";
-      link.href = "mirage-mobile-first.css?v=1";
+      link.href = "mirage-mobile-first.css?v=2";
     }
     document.head.appendChild(link);
   }
 
   function buildNav() {
     const nav = $(".bottom-nav");
-    if (!nav) return;
+    if (!nav) return;   
+     if (nav.parentElement !== document.body) {
+      document.body.appendChild(nav);
+    }
     nav.innerHTML = NAV.map(([page, label, icon]) => `
       <button type="button" class="nav-item${page === "dashboard" ? " active" : ""}" data-page="${page}" aria-label="${label}" aria-current="${page === "dashboard" ? "page" : "false"}">
         <span>${ICONS[icon]}</span><small>${label}</small>
