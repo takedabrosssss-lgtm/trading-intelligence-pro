@@ -326,3 +326,33 @@ body[data-mirage-mode="spectre"] {
     box-sizing: border-box !important;
   }
 }
+/* MIRAGE — structural bottom navigation fix */
+.bottom-nav {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+  width: min(680px, calc(100vw - 20px)) !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+  transform: translateX(-50%) !important;
+  margin: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 2px !important;
+  z-index: 9999 !important;
+}
+
+.bottom-nav .nav-item {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.bottom-nav .nav-item small {
+  max-width: 100% !important;
+  font-size: clamp(8px, 2.3vw, 10px) !important;
+  white-space: nowrap !important;
+}
