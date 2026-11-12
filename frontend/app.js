@@ -780,6 +780,7 @@
   function renderAccounts(accounts) {
     const host = $("#portfolio-accounts");
     const strategies = $("#strategy-list");
+    const mobileTiles = $("#portfolio-account-tiles");
 
     if (!Array.isArray(accounts)) accounts = [];
 
@@ -815,6 +816,25 @@
         : `<div class="empty-message">
             Счета пока не созданы
           </div>`;
+    }
+
+    if (mobileTiles) {
+      mobileTiles.innerHTML = accounts.length
+        ? accounts.map(a => {
+            const pnl = Number(a.total_pnl || 0);
+            const positive = pnl >= 0;
+            const glyph = /scalp/i.test(a.name || "") ? "⌁"
+              : /intra/i.test(a.name || "") ? "◈"
+              : /swing/i.test(a.name || "") ? "↗" : "▦";
+            return `<button class="mobile-account-card" type="button" data-page="strategies">
+              <span class="mobile-account-symbol">${glyph}</span>
+              <span class="mobile-account-name">${safe(a.name)}</span>
+              <b class="mobile-account-equity">${money(a.equity)}</b>
+              <span class="mobile-account-pnl ${positive ? "positive" : "negative"}">${positive ? "+" : ""}${money(pnl)}</span>
+              <small>${safe(a.strategy || "Paper Trading")}</small>
+            </button>`;
+          }).join("")
+        : `<div class="mobile-empty-state">Счета пока не созданы</div>`;
     }
 
     if (strategies) {

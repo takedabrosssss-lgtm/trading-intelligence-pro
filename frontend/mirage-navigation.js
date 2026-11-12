@@ -9,11 +9,13 @@
   window.__MIRAGE_NAV_41__ = true;
 
   const PAGES = {
-    dashboard: "Обзор",
-    markets: "Рынки",
+    dashboard: "Главная",
     signals: "Сигналы",
-    strategies: "Стратегии",
-    portfolio: "Портфель"
+    markets: "Аналитика",
+    news: "Новости",
+    portfolio: "Портфель",
+    profile: "Профиль",
+    strategies: "Управление капиталом"
   };
 
   const MAP = {
@@ -26,8 +28,23 @@
     ],
 
     markets: [
+      ["Показатели Paper Trading", "#mobile-analytics-overview"],
+      ["Распределение капитала", "#analytics-allocation"],
       ["Список рынков", "#markets-list"],
       ["График цены", ".chart-panel"]
+    ],
+
+    news: [
+      ["Лента новостей", "#news-feed"],
+      ["Категории новостей", "#news .mobile-filter-row"]
+    ],
+
+    profile: [
+      ["Режим интерфейса", "#profile-mode-host"],
+      ["Настройки", "#profile-settings"],
+      ["Уведомления", "#profile-notifications"],
+      ["Управление капиталом", ".profile-menu-row[data-page='strategies']"],
+      ["О приложении", "#profile-about"]
     ],
 
     signals: [
