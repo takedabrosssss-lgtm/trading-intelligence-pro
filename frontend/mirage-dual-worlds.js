@@ -24,6 +24,7 @@
     chart: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h17M7 15l4-4 3 2 6-7"/></svg>`,
     trophy: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v6a5 5 0 0 1-10 0V4ZM7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"/></svg>`,
     activity: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>`,
+    user: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>`,
     shield: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.1-8 10-4.6-1.9-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>`,
     layers: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg>`,
     exchange: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h14l-3-3M20 17H6l3 3"/></svg>`,
@@ -279,7 +280,8 @@
   function refreshDecorativeIcons(root = document) {
     const navIcons = {
       dashboard: "home", markets: "markets", signals: "signals",
-      strategies: "strategies", portfolio: "portfolio"
+      strategies: "strategies", portfolio: "portfolio",
+      news: "activity", profile: "user"
     };
     $$(".bottom-nav [data-page]", root).forEach(button => {
       const span = $("span", button);
