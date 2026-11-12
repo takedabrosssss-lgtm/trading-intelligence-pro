@@ -1,3 +1,4 @@
+
 """Read-only market news aggregation from public RSS feeds.
 
 The impact labels are transparent keyword heuristics, not predictive signals.
@@ -27,6 +28,7 @@ SOURCES = (
     ("Bitcoin Magazine", "https://bitcoinmagazine.com/feed"),
     ("Decrypt", "https://decrypt.co/feed"),
 )
+
 CACHE_SECONDS = 600
 _MAX_FEED_BYTES = 2_000_000
 _CACHE: dict[str, Any] = {"expires": 0.0, "items": [], "sources": []}
@@ -38,6 +40,7 @@ _IMG_RE = re.compile(
     r"""<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']""",
     re.I,
 )
+
 _ASSET_PATTERNS = (
     ("BTC", re.compile(r"\b(bitcoin|btc)\b", re.I)),
     ("ETH", re.compile(r"\b(ethereum|ether|eth)\b", re.I)),
@@ -47,6 +50,7 @@ _ASSET_PATTERNS = (
     ("ADA", re.compile(r"\b(cardano|ada)\b", re.I)),
     ("DOGE", re.compile(r"\b(dogecoin|doge)\b", re.I)),
 )
+
 _HIGH_IMPACT = re.compile(
     r"\b(SEC|ETF|hack|hacked|exploit|lawsuit|ban|approved|approval|rejected|"
     r"regulation|regulator|liquidation|bankruptcy|rate decision|interest rate|"
@@ -142,7 +146,13 @@ def _image_url(element: ET.Element) -> str | None:
     for node in element.iter():
         name = _local_name(node.tag)
         media_type = node.attrib.get("type", "").lower()
-        url = node.attrib.get("url", "").strip()
+
+        # RSS and Media RSS use url; Atom links use href.
+        url = (
+            node.attrib.get("url")
+            or node.attrib.get("href")
+            or ""
+        ).strip()
 
         if name in {"thumbnail", "content"} and url:
             if name == "thumbnail" or media_type.startswith("image/"):
@@ -170,7 +180,6 @@ def _image_url(element: ET.Element) -> str | None:
         if match:
             candidates.append(html.unescape(match.group(1)).strip())
 
-    # Return only validated public HTTP(S) image URLs.
     for candidate in candidates:
         if _is_http_url(candidate):
             return candidate
@@ -354,4 +363,5 @@ async def get_news(
             "items": items[:limit],
             "sources": source_counts,
             "updated_at": updated_at,
-    }
+        }
+        
