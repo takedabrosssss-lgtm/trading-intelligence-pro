@@ -1,3 +1,4 @@
+
 /* MIRAGE Mobile First — optimized for narrow Telegram WebView screens. */
 :root {
   --mf-bg: #050b12;
@@ -126,6 +127,7 @@ body[data-mirage-mode="spectre"] .bottom-nav { background: rgba(13, 9, 24, .95) 
 .mobile-details-body { padding: 0 12px 12px; }
 .mobile-accounts-section { margin: 20px 0 4px; }
 .mobile-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.mobile-section-heading h2 { font-size: 17px !important; }
 .mobile-text-link { display: inline-flex; align-items: center; gap: 4px; background: transparent; border: 0; color: var(--mf-accent); font-size: 10px; font-weight: 750; white-space: nowrap; }
 .mobile-text-link svg { width: 14px; height: 14px; }
 .mobile-account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
@@ -178,6 +180,7 @@ body[data-mirage-mode="spectre"] .bottom-nav { background: rgba(13, 9, 24, .95) 
 .mobile-advanced-details .m4-panel { margin: 0 !important; }
 .m4-table-wrap { max-width: 100%; overflow-x: auto; }
 .mobile-reduced-motion *, .mirage-reduced-motion * { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+
 @media (min-width: 700px) {
   main { padding: 22px 24px 42px !important; }
   .mobile-news-feed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -199,9 +202,10 @@ body[data-mirage-mode="spectre"] .bottom-nav { background: rgba(13, 9, 24, .95) 
   .mobile-news-thumb { min-height: 96px; }
   .mobile-signal-prices b { font-size: 9px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+@media (prefers-reduced-motion: *,
+*::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
 /* Mode palette follows the approved cyan / violet phone mockup. */
 body[data-mirage-mode="stealth"] {
   --mw-bg: #050b12;
@@ -229,6 +233,7 @@ body[data-mirage-mode="spectre"] {
   --mw-accent-soft: rgba(189, 140, 255, .13);
   background: radial-gradient(ellipse at 78% -14%, rgba(113, 64, 189, .24), transparent 46%), #090713 !important;
 }
+
 /* Compact market/chart and financial tiles at phone width. */
 .portfolio-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 .market-preview { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -273,3 +278,51 @@ body[data-mirage-mode="spectre"] {
 .mobile-allocation-row > small { color: var(--mf-muted); font-size: 9px; }
 .mobile-allocation-track { height: 6px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.06); }
 .mobile-allocation-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--mf-accent), var(--mf-accent-2)); }
+
+/* =========================================================
+   MIRAGE FIX — MOBILE BOTTOM NAVIGATION ALIGNMENT
+   Overrides inherited legacy centered positioning on phones.
+   ========================================================= */
+@media (max-width: 699px) {
+  .bottom-nav {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    transform: none !important;
+    box-sizing: border-box !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+                      }
+  .bottom-nav .nav-item {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .bottom-nav {
+    left: 6px !important;
+    right: 6px !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
+    box-sizing: border-box !important;
+  }
+}
+
+@media (min-width: 700px) {
+  .bottom-nav {
+    left: 50% !important;
+    right: auto !important;
+    width: min(680px, calc(100% - 36px)) !important;
+    max-width: none !important;
+    transform: translateX(-50%) !important;
+    box-sizing: border-box !important;
+  }
+}
