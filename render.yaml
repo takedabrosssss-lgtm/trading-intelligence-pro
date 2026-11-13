@@ -18,6 +18,14 @@ services:
         sync: false
       - key: OWNER_TELEGRAM_ID
         sync: false
+      - key: ALLOWED_TELEGRAM_IDS
+        sync: false
+      - key: MAX_USERS
+        value: "4"
+      - key: EXCHANGE_ENCRYPTION_KEY
+        sync: false
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
       - key: MINI_APP_URL
         value: https://trading-intelligence-web.onrender.com
       - key: SECRET_KEY
