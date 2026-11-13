@@ -720,7 +720,7 @@
       const up = Number(p.unrealized_pnl || 0) >= 0;
 
       return `
-        <article class="position-card">
+        <article class="position-card" data-position-id="${Number(p.id)}">
 
           <div class="position-head">
             <div>
@@ -771,7 +771,9 @@
               <b>${number(p.quantity, 6)}</b>
             </div>
           </div>
-
+          <button type="button" class="mirage-close-paper-position" data-paper-close-id="${Number(p.id)}">
+            Закрыть Paper-позицию
+          </button>
         </article>
       `;
     }).join("");

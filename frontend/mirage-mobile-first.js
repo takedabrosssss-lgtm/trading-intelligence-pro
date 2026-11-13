@@ -9,7 +9,7 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const NAV = [
     ["dashboard", "Главная", "home"],
-    ["signals", "Сигналы", "pulse"],
+    ["signals", "Торговля", "pulse"],
     ["markets", "Аналитика", "chart"],
     ["news", "Новости", "news"],
     ["profile", "Профиль", "user"]
@@ -303,7 +303,7 @@
     if (count) count.textContent = `${filtered.length} публикаций`;
     host.innerHTML = filtered.length ? filtered.map(item => `
       <a class="mobile-news-card" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">
-        <div class="mobile-news-thumb ${esc(item.category)}"><span>${item.category === "economy" ? "◌" : item.category === "analysis" ? "⌁" : "₿"}</span></div>
+        <div class="mobile-news-thumb ${esc(item.category)}">${item.image_url ? `<img src="${esc(item.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove();this.parentElement.classList.add('no-image')">` : ""}<span>${item.category === "economy" ? "◌" : item.category === "analysis" ? "⌁" : "₿"}</span></div>
         <div class="mobile-news-copy"><div class="mobile-news-meta"><span class="impact-tag impact-${esc(item.impact)}">${impactLabel(item.impact)}</span><span>${esc(item.source || "RSS")}</span></div><b>${esc(item.title)}</b><p>${esc(item.summary || "Откройте источник, чтобы прочитать публикацию полностью.")}</p><div class="mobile-news-foot"><span>${esc(timeAgo(item.published_at))}</span><span>${(item.assets || []).map(esc).join(" · ")}</span><i>›</i></div></div>
       </a>`).join("") : `<div class="mobile-empty-state">В этой категории пока нет публикаций.</div>`;
   }
