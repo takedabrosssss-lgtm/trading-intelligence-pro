@@ -1,3 +1,4 @@
+
 """Read-only market news aggregation from public RSS feeds.
 
 The impact labels are transparent keyword heuristics, not predictive signals.
@@ -27,6 +28,7 @@ SOURCES = (
     ("Bitcoin Magazine", "https://bitcoinmagazine.com/feed"),
     ("Decrypt", "https://decrypt.co/feed"),
 )
+
 CACHE_SECONDS = 600
 _MAX_FEED_BYTES = 2_000_000
 _CACHE: dict[str, Any] = {"expires": 0.0, "items": [], "sources": []}
@@ -34,6 +36,11 @@ _CACHE_LOCK = asyncio.Lock()
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
+_IMG_RE = re.compile(
+    r"""<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']""",
+    re.I,
+)
+
 _ASSET_PATTERNS = (
     ("BTC", re.compile(r"\b(bitcoin|btc)\b", re.I)),
     ("ETH", re.compile(r"\b(ethereum|ether|eth)\b", re.I)),
@@ -43,6 +50,7 @@ _ASSET_PATTERNS = (
     ("ADA", re.compile(r"\b(cardano|ada)\b", re.I)),
     ("DOGE", re.compile(r"\b(dogecoin|doge)\b", re.I)),
 )
+
 _HIGH_IMPACT = re.compile(
     r"\b(SEC|ETF|hack|hacked|exploit|lawsuit|ban|approved|approval|rejected|"
     r"regulation|regulator|liquidation|bankruptcy|rate decision|interest rate|"
@@ -71,7 +79,9 @@ def _local_name(tag: str) -> str:
 def _child_text(element: ET.Element, names: set[str]) -> str:
     for child in list(element):
         if _local_name(child.tag) in names:
-            value = " ".join(part.strip() for part in child.itertext() if part.strip())
+            value = " ".join(
+                part.strip() for part in child.itertext() if part.strip()
+            )
             if value:
                 return value
     return ""
@@ -105,6 +115,7 @@ def _item_link(element: ET.Element) -> str:
     link = _child_text(element, {"link"})
     if link:
         return link.strip()
+
     for child in list(element):
         if _local_name(child.tag) == "link":
             href = child.attrib.get("href", "").strip()
@@ -112,6 +123,68 @@ def _item_link(element: ET.Element) -> str:
             if href and rel in {"alternate", ""}:
                 return href
     return ""
+
+
+def _is_http_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value.strip())
+        return (
+            parsed.scheme.lower() in {"http", "https"}
+            and bool(parsed.netloc)
+            and not parsed.username
+            and not parsed.password
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _image_url(element: ET.Element) -> str | None:
+    """Extract an image URL from RSS, Media RSS, or Atom entries."""
+    candidates: list[str] = []
+
+    # RSS enclosure, Media RSS thumbnail/content and Atom image links.
+    for node in element.iter():
+        name = _local_name(node.tag)
+        media_type = node.attrib.get("type", "").lower()
+
+        # RSS and Media RSS use url; Atom links use href.
+        url = (
+            node.attrib.get("url")
+            or node.attrib.get("href")
+            or ""
+        ).strip()
+
+        if name in {"thumbnail", "content"} and url:
+            if name == "thumbnail" or media_type.startswith("image/"):
+                candidates.append(url)
+
+        elif name == "enclosure" and url:
+            if media_type.startswith("image/"):
+                candidates.append(url)
+
+        elif name == "link" and url:
+            rel = node.attrib.get("rel", "").lower()
+            if rel == "enclosure" and media_type.startswith("image/"):
+                candidates.append(url)
+
+    # Images embedded in RSS description, content:encoded or Atom content.
+    for child in element.iter():
+        if _local_name(child.tag) not in {
+            "description", "encoded", "content", "summary"
+        }:
+            continue
+
+        raw = " ".join(child.itertext())
+        match = _IMG_RE.search(raw)
+
+        if match:
+            candidates.append(html.unescape(match.group(1)).strip())
+
+    for candidate in candidates:
+        if _is_http_url(candidate):
+            return candidate
+
+    return None
 
 
 def parse_rss(xml_text: str, source: str) -> list[dict[str, Any]]:
@@ -122,29 +195,75 @@ def parse_rss(xml_text: str, source: str) -> list[dict[str, Any]]:
         logger.warning("Invalid RSS from %s: %s", source, exc)
         return []
 
-    elements = [node for node in root.iter() if _local_name(node.tag) in {"item", "entry"}]
+    elements = [
+        node for node in root.iter()
+        if _local_name(node.tag) in {"item", "entry"}
+    ]
+
     results: list[dict[str, Any]] = []
+
     for element in elements:
         title = _clean_text(_child_text(element, {"title"}), 220)
-        summary = _clean_text(_child_text(element, {"description", "summary", "content", "encoded"}), 520)
+        summary = _clean_text(
+            _child_text(
+                element,
+                {"description", "summary", "content", "encoded"},
+            ),
+            520,
+        )
         link = _item_link(element)
+
         if not title or not link:
             continue
+
         parsed_url = urlparse(link)
-        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        if (
+            parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.netloc
+            or parsed_url.username
+            or parsed_url.password
+        ):
             continue
-        published_raw = _child_text(element, {"pubdate", "published", "updated", "date"})
+
+        published_raw = _child_text(
+            element,
+            {"pubdate", "published", "updated", "date"},
+        )
         published = _published(published_raw)
+
         haystack = f"{title} {summary}"
-        assets = [symbol for symbol, pattern in _ASSET_PATTERNS if pattern.search(haystack)]
-        category = "economy" if _ECONOMY.search(haystack) else "analysis" if _ANALYSIS.search(haystack) else "crypto"
-        impact = "high" if _HIGH_IMPACT.search(haystack) else "medium" if _MEDIUM_IMPACT.search(haystack) else "low"
-        stable_id = hashlib.sha256(link.encode("utf-8")).hexdigest()[:16]
+        assets = [
+            symbol
+            for symbol, pattern in _ASSET_PATTERNS
+            if pattern.search(haystack)
+        ]
+
+        category = (
+            "economy"
+            if _ECONOMY.search(haystack)
+            else "analysis"
+            if _ANALYSIS.search(haystack)
+            else "crypto"
+        )
+
+        impact = (
+            "high"
+            if _HIGH_IMPACT.search(haystack)
+            else "medium"
+            if _MEDIUM_IMPACT.search(haystack)
+            else "low"
+        )
+
+        stable_id = hashlib.sha256(
+            link.encode("utf-8")
+        ).hexdigest()[:16]
+
         results.append({
             "id": stable_id,
             "title": title,
             "summary": summary,
             "url": link,
+            "image_url": _image_url(element),
             "source": source,
             "published_at": published,
             "category": category,
@@ -152,42 +271,97 @@ def parse_rss(xml_text: str, source: str) -> list[dict[str, Any]]:
             "impact": impact,
             "impact_method": "keyword_heuristic",
         })
+
     return results
 
 
-async def _fetch_source(client: httpx.AsyncClient, name: str, url: str) -> tuple[str, list[dict[str, Any]]]:
+async def _fetch_source(
+    client: httpx.AsyncClient,
+    name: str,
+    url: str,
+) -> tuple[str, list[dict[str, Any]]]:
     try:
-        response = await client.get(url, headers={"Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml"})
+        response = await client.get(
+            url,
+            headers={
+                "Accept": (
+                    "application/rss+xml, application/atom+xml, "
+                    "application/xml, text/xml"
+                )
+            },
+        )
         response.raise_for_status()
+
         if len(response.content) > _MAX_FEED_BYTES:
             raise ValueError("Feed exceeds size limit")
+
         return name, parse_rss(response.text, name)
-    except Exception as exc:  # one unavailable feed must not block the others
+
+    except Exception as exc:
         logger.info("News source %s unavailable: %s", name, exc)
         return name, []
 
 
-async def get_news(limit: int = 50, force_refresh: bool = False) -> dict[str, Any]:
+async def get_news(
+    limit: int = 50,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
     limit = max(1, min(int(limit), 100))
+
     async with _CACHE_LOCK:
         now = time.monotonic()
+
         if not force_refresh and _CACHE["expires"] > now:
             return {
                 "items": _CACHE["items"][:limit],
                 "sources": _CACHE["sources"],
                 "updated_at": _CACHE.get("updated_at"),
             }
+
         timeout = httpx.Timeout(8.0, connect=4.0)
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            fetched = await asyncio.gather(*(_fetch_source(client, name, url) for name, url in SOURCES))
+
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+        ) as client:
+            fetched = await asyncio.gather(
+                *(
+                    _fetch_source(client, name, url)
+                    for name, url in SOURCES
+                )
+            )
+
         deduped: dict[str, dict[str, Any]] = {}
         source_counts = []
+
         for name, records in fetched:
-            source_counts.append({"name": name, "count": len(records), "available": bool(records)})
+            source_counts.append({
+                "name": name,
+                "count": len(records),
+                "available": bool(records),
+            })
+
             for record in records:
                 deduped.setdefault(record["url"], record)
+
         items = list(deduped.values())
-        items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
+        items.sort(
+            key=lambda item: item.get("published_at") or "",
+            reverse=True,
+        )
+
         updated_at = datetime.now(timezone.utc).isoformat()
-        _CACHE.update({"expires": time.monotonic() + CACHE_SECONDS, "items": items, "sources": source_counts, "updated_at": updated_at})
-        return {"items": items[:limit], "sources": source_counts, "updated_at": updated_at}
+
+        _CACHE.update({
+            "expires": time.monotonic() + CACHE_SECONDS,
+            "items": items,
+            "sources": source_counts,
+            "updated_at": updated_at,
+        })
+
+        return {
+            "items": items[:limit],
+            "sources": source_counts,
+            "updated_at": updated_at,
+        }
+        

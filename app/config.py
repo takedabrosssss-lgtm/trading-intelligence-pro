@@ -23,6 +23,9 @@ class Settings:
     allowed_telegram_ids: str
     database_url: str
     secret_key: str
+    exchange_encryption_key: str
+    live_trading_enabled: bool
+    max_users: int
     host: str
     port: int
 
@@ -68,6 +71,9 @@ def get_settings() -> Settings:
         allowed_telegram_ids=os.getenv("ALLOWED_TELEGRAM_IDS", ""),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./trading_intelligence.db"),
         secret_key=os.getenv("SECRET_KEY", ""),
+        exchange_encryption_key=os.getenv("EXCHANGE_ENCRYPTION_KEY", ""),
+        live_trading_enabled=False,  # Hard-disabled until a separately tested live-execution release.
+        max_users=max(1, min(int(os.getenv("MAX_USERS", "4")), 20)),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
         initial_capital=10000.0,

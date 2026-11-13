@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 
 from app.config import settings
 from app.database import SessionLocal, Signal, PaperAccount, Position, Trade
+from app.access import user_id_from_claims
 from app.market_data import market_data
 from app.signals import closed_candles
 
@@ -95,6 +96,7 @@ def build_signal_intelligence_router(require_user):
 
     @router.get("/signal-intelligence")
     async def signal_intelligence(user=Depends(require_user)):
+        owner_id = user_id_from_claims(user)
         db = SessionLocal()
         try:
             signals = (
@@ -104,14 +106,21 @@ def build_signal_intelligence_router(require_user):
                 .limit(MAX_TRACKED_SIGNALS)
                 .all()
             )
-            accounts = db.query(PaperAccount).order_by(PaperAccount.id.asc()).all()
-            open_positions = db.query(Position).filter(Position.status == "open").all()
+            accounts = db.query(PaperAccount).filter(
+                PaperAccount.owner_telegram_id == owner_id
+            ).order_by(PaperAccount.id.asc()).all()
+            account_ids = [account.id for account in accounts]
+            open_positions = db.query(Position).filter(
+                Position.account_id.in_(account_ids), Position.status == "open"
+            ).all() if account_ids else []
             positions_by_account = {}
             for position in open_positions:
                 positions_by_account.setdefault(position.account_id, []).append(position)
 
             signal_ids = [s.id for s in signals]
-            linked_positions = db.query(Position).filter(Position.signal_id.in_(signal_ids)).all() if signal_ids else []
+            linked_positions = db.query(Position).filter(
+                Position.signal_id.in_(signal_ids), Position.account_id.in_(account_ids)
+            ).all() if signal_ids and account_ids else []
             position_ids = [p.id for p in linked_positions]
             trades = db.query(Trade).filter(Trade.position_id.in_(position_ids), Trade.closed_at.isnot(None)).all() if position_ids else []
             trade_by_position = {t.position_id: t for t in trades}
@@ -151,6 +160,9 @@ def build_signal_intelligence_router(require_user):
                 })
 
             closed_pnls = [float(t.net_pnl or 0) for t in trades]
+            # Manual closes remain in actual PnL and Profit Factor, but not Win Rate.
+            wr_trades = [t for t in trades if (t.exit_reason or "").upper() != "MANUAL_CLOSE"]
+            wr_wins = [t for t in wr_trades if float(t.net_pnl or 0) > 0]
             wins = [p for p in closed_pnls if p > 0]
             losses = [p for p in closed_pnls if p < 0]
 
@@ -172,7 +184,7 @@ def build_signal_intelligence_router(require_user):
                     else:
                         reserved_risk += qty * abs(entry - float(p.stop_loss))
                 risk_accounts.append({
-                    "name": account.name, "strategy": account.strategy,
+                    "name": account.strategy.title(), "strategy": account.strategy,
                     "equity": round(equity, 2), "open_positions": len(positions),
                     "exposure": round(exposure, 2),
                     "exposure_pct": round(exposure / equity * 100, 2) if equity > 0 else None,
@@ -194,7 +206,9 @@ def build_signal_intelligence_router(require_user):
                 },
                 "paper_performance": {
                     "closed_trades": len(closed_pnls), "wins": len(wins), "losses": len(losses),
-                    "win_rate_pct": round(len(wins) / len(closed_pnls) * 100, 2) if closed_pnls else None,
+                    "win_rate_pct": round(len(wr_wins) / len(wr_trades) * 100, 2) if wr_trades else None,
+                    "win_rate_sample_count": len(wr_trades),
+                    "manual_closes_excluded_from_win_rate": len(trades) - len(wr_trades),
                     "net_pnl": round(sum(closed_pnls), 2),
                     "profit_factor": round(sum(wins) / abs(sum(losses)), 3) if losses else ("inf" if wins else None),
                 },
