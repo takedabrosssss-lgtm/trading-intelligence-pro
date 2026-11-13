@@ -359,6 +359,8 @@ def test_legacy_sqlite_migration_keeps_paper_balances_and_allows_new_invitees(mo
 
     db = factory()
     try:
+        migrated_user = db.query(User).filter(User.telegram_id == "11111").one()
+        assert migrated_user.phantom_locked is False
         owner_rows = db.query(PaperAccount).filter(PaperAccount.owner_telegram_id == "11111").all()
         assert len(owner_rows) == 4
         assert sum(row.balance for row in owner_rows) == pytest.approx(10000)
@@ -630,3 +632,532 @@ def test_parallel_first_login_provisions_one_user_and_four_accounts(monkeypatch,
     finally:
         db.close()
         engine.dispose()
+
+
+def test_phantom_lock_is_persistent_and_blocks_exchange_reconnect(monkeypatch):
+    from app import platform_api
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        db.add(ExchangeConnection(
+            owner_telegram_id="11111", exchange="binance", environment="testnet",
+            api_key_encrypted="cipher-key", api_secret_encrypted="cipher-secret",
+            connection_status="connected", emergency_lock=False,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    verify = AsyncMock(return_value={"can_trade": False, "withdrawal_check": "verified_disabled"})
+    monkeypatch.setattr(platform_api, "verify_credentials", verify)
+    app = build_platform_test_app(monkeypatch, factory)
+    client = TestClient(app)
+    headers = {"X-Test-Telegram-ID": "11111"}
+
+    locked = client.post("/api/platform/phantom/lock", headers=headers)
+    assert locked.status_code == 200
+    assert locked.json()["phantom_locked"] is True
+
+    db = factory()
+    try:
+        user = db.query(User).filter(User.telegram_id == "11111").one()
+        connection = db.query(ExchangeConnection).filter(ExchangeConnection.owner_telegram_id == "11111").one()
+        assert user.phantom_locked is True
+        assert user.trading_mode == "paper"
+        assert connection.emergency_lock is True
+        assert connection.connection_status == "locked"
+    finally:
+        db.close()
+
+    reconnect = client.post(
+        "/api/platform/exchanges/connect",
+        headers=headers,
+        json={
+            "exchange": "binance", "environment": "testnet",
+            "api_key": "12345678", "api_secret": "abcdefgh",
+            "confirm_withdrawals_disabled": True,
+        },
+    )
+    assert reconnect.status_code == 423
+    verify.assert_not_awaited()
+
+
+def test_phantom_unlock_requires_exact_confirmation_and_keeps_exchange_locked(monkeypatch):
+    from app import platform_api
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        user = db.query(User).filter(User.telegram_id == "11111").one()
+        user.phantom_locked = True
+        connection = ExchangeConnection(
+            owner_telegram_id="11111", exchange="bybit", environment="testnet",
+            api_key_encrypted="cipher-key", api_secret_encrypted="cipher-secret",
+            connection_status="locked", emergency_lock=True,
+        )
+        db.add(connection)
+        db.commit()
+    finally:
+        db.close()
+
+    app = build_platform_test_app(monkeypatch, factory)
+    client = TestClient(app)
+    headers = {"X-Test-Telegram-ID": "11111"}
+    denied = client.post("/api/platform/phantom/unlock", headers=headers, json={"confirmation": "wrong phrase"})
+    assert denied.status_code == 400
+    unlocked = client.post("/api/platform/phantom/unlock", headers=headers, json={"confirmation": "UNLOCK MIRAGE"})
+    assert unlocked.status_code == 200
+    db = factory()
+    try:
+        user = db.query(User).filter(User.telegram_id == "11111").one()
+        connection = db.query(ExchangeConnection).filter(ExchangeConnection.owner_telegram_id == "11111").one()
+        assert user.phantom_locked is False
+        assert connection.emergency_lock is True
+        assert connection.connection_status == "locked"
+    finally:
+        db.close()
+
+
+def test_exchange_account_snapshot_is_owner_scoped_and_never_returns_credentials(monkeypatch):
+    from app import platform_api
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    seed_user(factory, "22222", "user")
+    db = factory()
+    try:
+        connection = ExchangeConnection(
+            owner_telegram_id="11111", exchange="bybit", environment="testnet",
+            api_key_encrypted="cipher-key", api_secret_encrypted="cipher-secret",
+            connection_status="connected", emergency_lock=False,
+        )
+        db.add(connection)
+        db.commit()
+        connection_id = connection.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(platform_api, "decrypt_secret", lambda value: {
+        "cipher-key": "private-api-key", "cipher-secret": "private-api-secret"
+    }[value])
+    fetch = AsyncMock(return_value={
+        "exchange": "bybit", "environment": "testnet", "total_equity_usd": 1234.5,
+        "assets": [{"asset": "USDT", "free": 1200.0, "locked": 34.5, "total": 1234.5, "usd_value": 1234.5}],
+    })
+    monkeypatch.setattr(platform_api, "fetch_account_snapshot", fetch)
+    app = build_platform_test_app(monkeypatch, factory)
+    client = TestClient(app)
+
+    denied = client.get(f"/api/platform/exchanges/{connection_id}/account", headers={"X-Test-Telegram-ID": "22222"})
+    assert denied.status_code == 404
+    response = client.get(f"/api/platform/exchanges/{connection_id}/account", headers={"X-Test-Telegram-ID": "11111"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["snapshot"]["total_equity_usd"] == 1234.5
+    assert "private-api-key" not in response.text
+    assert "private-api-secret" not in response.text
+    fetch.assert_awaited_once_with("bybit", "testnet", "private-api-key", "private-api-secret")
+
+
+def test_locked_exchange_account_snapshot_is_refused_without_decrypting(monkeypatch):
+    from app import platform_api
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        connection = ExchangeConnection(
+            owner_telegram_id="11111", exchange="binance", environment="testnet",
+            api_key_encrypted="cipher-key", api_secret_encrypted="cipher-secret",
+            connection_status="locked", emergency_lock=True,
+        )
+        db.add(connection)
+        db.commit()
+        connection_id = connection.id
+    finally:
+        db.close()
+
+    decrypt = lambda value: (_ for _ in ()).throw(AssertionError("must not decrypt locked credentials"))
+    fetch = AsyncMock()
+    monkeypatch.setattr(platform_api, "decrypt_secret", decrypt)
+    monkeypatch.setattr(platform_api, "fetch_account_snapshot", fetch)
+    app = build_platform_test_app(monkeypatch, factory)
+    response = TestClient(app).get(
+        f"/api/platform/exchanges/{connection_id}/account",
+        headers={"X-Test-Telegram-ID": "11111"},
+    )
+    assert response.status_code == 423
+    fetch.assert_not_awaited()
+
+
+def test_exchange_connect_encrypts_credentials_and_does_not_store_plaintext(monkeypatch):
+    from app import platform_api
+    from cryptography.fernet import Fernet
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setattr(platform_api, "encrypt_secret", lambda value: Fernet(key.encode()).encrypt(value.encode()).decode())
+    monkeypatch.setattr(platform_api, "verify_credentials", AsyncMock(return_value={
+        "can_trade": False,
+        "withdrawal_access_detected": False,
+        "withdrawal_check": "verified_disabled",
+    }))
+    app = build_platform_test_app(monkeypatch, factory)
+    response = TestClient(app).post(
+        "/api/platform/exchanges/connect",
+        headers={"X-Test-Telegram-ID": "11111"},
+        json={
+            "exchange": "binance", "environment": "testnet",
+            "api_key": "plaintext-api-key", "api_secret": "plaintext-api-secret",
+            "confirm_read_only": True,
+            "confirm_withdrawals_disabled": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert "plaintext-api-key" not in response.text
+    assert "plaintext-api-secret" not in response.text
+    db = factory()
+    try:
+        row = db.query(ExchangeConnection).filter(ExchangeConnection.owner_telegram_id == "11111").one()
+        assert row.api_key_encrypted != "plaintext-api-key"
+        assert row.api_secret_encrypted != "plaintext-api-secret"
+        assert Fernet(key.encode()).decrypt(row.api_key_encrypted.encode()).decode() == "plaintext-api-key"
+        assert Fernet(key.encode()).decrypt(row.api_secret_encrypted.encode()).decode() == "plaintext-api-secret"
+        assert row.connection_status == "connected"
+        assert row.emergency_lock is False
+    finally:
+        db.close()
+
+
+def test_binance_account_snapshot_returns_only_nonzero_native_balances(monkeypatch):
+    from app import exchange_clients
+
+    class MockResponse:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {
+                "accountType": "SPOT",
+                "canTrade": False,
+                "balances": [
+                    {"asset": "USDT", "free": "100.5", "locked": "2.5"},
+                    {"asset": "BTC", "free": "0.01", "locked": "0"},
+                    {"asset": "ZERO", "free": "0", "locked": "0"},
+                ],
+            }
+
+    class MockClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def get(self, *args, **kwargs): return MockResponse()
+
+    monkeypatch.setattr(exchange_clients.httpx, "AsyncClient", lambda **kwargs: MockClient())
+    snapshot = asyncio.run(exchange_clients.fetch_account_snapshot(
+        "binance", "testnet", "example-api-key", "example-api-secret"
+    ))
+    assert snapshot["exchange"] == "binance"
+    assert snapshot["valuation_available"] is False
+    assert [row["asset"] for row in snapshot["assets"]] == ["USDT", "BTC"]
+    assert snapshot["assets"][0]["total"] == pytest.approx(103.0)
+
+
+def test_frontend_entrypoint_references_only_existing_local_assets():
+    from html.parser import HTMLParser
+    from pathlib import Path
+
+    frontend = Path(__file__).resolve().parents[1] / "frontend"
+    class AssetParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.refs = []
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            for key in ("src", "href"):
+                value = attrs.get(key)
+                if value and not value.startswith(("https://", "http://", "data:", "#")):
+                    self.refs.append(value.split("?", 1)[0].lstrip("/"))
+
+    parser = AssetParser()
+    parser.feed((frontend / "index.html").read_text(encoding="utf-8"))
+    missing = [ref for ref in parser.refs if not (frontend / ref).is_file()]
+    assert not missing, f"Missing local frontend assets: {missing}"
+    html = (frontend / "index.html").read_text(encoding="utf-8")
+    assert 'src="mirage-release.js?' in html
+    assert 'src="mirage-luxe.js?' in html
+    assert (frontend / "mirage-ui-repair.css").is_file()
+    assert (frontend / "mirage-avatar-512.png").is_file()
+    assert 'src="mirage-brand-nav.js' not in html
+    assert 'src="premium-dashboard.js' not in html
+
+
+def test_exchange_connect_requires_read_only_confirmation(monkeypatch):
+    from app import platform_api
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    verify = AsyncMock()
+    monkeypatch.setattr(platform_api, "verify_credentials", verify)
+    app = build_platform_test_app(monkeypatch, factory)
+    response = TestClient(app).post(
+        "/api/platform/exchanges/connect",
+        headers={"X-Test-Telegram-ID": "11111"},
+        json={
+            "exchange": "bybit", "environment": "testnet",
+            "api_key": "12345678", "api_secret": "abcdefgh",
+            "confirm_withdrawals_disabled": True,
+        },
+    )
+    assert response.status_code == 400
+    assert "read-only" in response.json()["detail"].lower()
+    verify.assert_not_awaited()
+
+
+def test_bybit_account_snapshot_uses_exchange_provided_equity(monkeypatch):
+    from app import exchange_clients
+
+    class MockResponse:
+        def raise_for_status(self): return None
+        def json(self):
+            return {
+                "retCode": 0,
+                "result": {"list": [{
+                    "totalEquity": "2500.25",
+                    "totalWalletBalance": "2490.00",
+                    "coin": [
+                        {"coin": "USDT", "walletBalance": "2000", "locked": "10", "usdValue": "2000"},
+                        {"coin": "BTC", "walletBalance": "0.01", "locked": "0", "usdValue": "490.25"},
+                    ],
+                }]},
+            }
+
+    class MockClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def get(self, *args, **kwargs): return MockResponse()
+
+    monkeypatch.setattr(exchange_clients.httpx, "AsyncClient", lambda **kwargs: MockClient())
+    snapshot = asyncio.run(exchange_clients.fetch_account_snapshot(
+        "bybit", "testnet", "example-api-key", "example-api-secret"
+    ))
+    assert snapshot["total_equity_usd"] == pytest.approx(2500.25)
+    assert snapshot["valuation_available"] is True
+    assert len(snapshot["assets"]) == 2
+    assert snapshot["assets"][0]["asset"] == "USDT"
+
+
+def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
+    from app import paper_trading
+    from types import SimpleNamespace
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    seed_user(factory, "22222", "user")
+    db = factory()
+    try:
+        guest_account = db.query(PaperAccount).filter(
+            PaperAccount.owner_telegram_id == "22222", PaperAccount.strategy == "scalping"
+        ).one()
+        guest_account.balance = 2400.0
+        signal = Signal(
+            symbol="BTCUSDT", timeframe="15m", direction="BUY", grade="A",
+            score=90.0, confidence=90.0, entry_price=100.0, stop_loss=95.0,
+            take_profit=110.0, strategy="scalping", status="new",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(signal)
+        db.commit()
+        signal_id = signal.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(paper_trading, "SessionLocal", factory)
+    monkeypatch.setattr(paper_trading, "market_data", SimpleNamespace(get_price=AsyncMock(return_value={"price": 100.0})))
+    monkeypatch.setattr(paper_trading, "assess_position", lambda **kwargs: SimpleNamespace(
+        allowed=kwargs["equity"] > 2450,
+        quantity=0.1,
+        reserved_risk=0.5,
+        reason="temporary risk block",
+    ))
+    first_open = asyncio.run(paper_trading.open_paper_positions())
+    assert first_open == 1
+
+    db = factory()
+    try:
+        signal = db.query(Signal).filter(Signal.id == signal_id).one()
+        assert signal.status == "paper_opened"
+        assert db.query(Position).filter(Position.signal_id == signal_id).count() == 1
+    finally:
+        db.close()
+
+    monkeypatch.setattr(paper_trading, "assess_position", lambda **kwargs: SimpleNamespace(
+        allowed=True, quantity=0.1, reserved_risk=0.5, reason=None,
+    ))
+    second_open = asyncio.run(paper_trading.open_paper_positions())
+    assert second_open == 1
+
+    db = factory()
+    try:
+        positions = db.query(Position).filter(Position.signal_id == signal_id).all()
+        owners = {db.query(PaperAccount).filter(PaperAccount.id == row.account_id).one().owner_telegram_id for row in positions}
+        assert len(positions) == 2
+        assert owners == {"11111", "22222"}
+    finally:
+        db.close()
+
+
+def test_binance_verification_fails_closed_when_withdrawal_permission_is_missing(monkeypatch):
+    from app import exchange_clients
+
+    class MockResponse:
+        def raise_for_status(self): return None
+        def json(self): return {"canTrade": False}
+
+    class MockClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def get(self, *args, **kwargs): return MockResponse()
+
+    monkeypatch.setattr(exchange_clients.httpx, "AsyncClient", lambda **kwargs: MockClient())
+    with pytest.raises(PermissionError, match="did not explicitly confirm"):
+        asyncio.run(exchange_clients.verify_credentials(
+            "binance", "testnet", "example-api-key", "example-api-secret"
+        ))
+
+
+def test_signal_delivery_retries_pending_recipients_after_paper_open_without_state_regression(monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, "aiogram", types.SimpleNamespace(Bot=object))
+    from app import worker
+    from app.database import SignalDelivery
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    seed_user(factory, "22222", "user")
+    db = factory()
+    try:
+        signal = Signal(
+            symbol="BTCUSDT", timeframe="1h", direction="BUY", grade="A",
+            score=90, entry_price=100, stop_loss=95, take_profit=110,
+            strategy="intraday", status="paper_opened",
+        )
+        db.add(signal); db.flush()
+        db.add_all([
+            SignalDelivery(signal_id=signal.id, telegram_id="11111", status="delivered", attempts=1),
+            SignalDelivery(signal_id=signal.id, telegram_id="22222", status="pending", attempts=0),
+        ])
+        db.commit(); signal_id=signal.id
+    finally:
+        db.close()
+
+    class FakeBot:
+        def __init__(self, token): self.token=token; self.sent=[]
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def send_message(self, **kwargs): self.sent.append(kwargs)
+
+    fake_bot=FakeBot("test-token")
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    monkeypatch.setattr(worker, "settings", SimpleNamespace(bot_token="test-token"))
+    monkeypatch.setattr(worker, "Bot", lambda token: fake_bot)
+    monkeypatch.setattr(worker, "is_quality_signal_values", lambda *args: True)
+    delivered=asyncio.run(worker.deliver_pending_signals())
+    assert delivered == 1
+    assert len(fake_bot.sent) == 1 and fake_bot.sent[0]["chat_id"] == "22222"
+    db=factory()
+    try:
+        signal=db.query(Signal).filter(Signal.id==signal_id).one()
+        rows=db.query(SignalDelivery).filter(SignalDelivery.signal_id==signal_id).all()
+        assert signal.status == "paper_opened"
+        assert {row.telegram_id: row.status for row in rows} == {"11111":"delivered", "22222":"delivered"}
+    finally:
+        db.close()
+
+
+def test_bybit_read_only_verification_does_not_claim_to_know_trading_permissions(monkeypatch):
+    from app import exchange_clients
+
+    class MockResponse:
+        def raise_for_status(self): return None
+        def json(self): return {"retCode": 0, "retMsg": "OK", "result": {"list": []}}
+
+    class MockClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def get(self, *args, **kwargs): return MockResponse()
+
+    monkeypatch.setattr(exchange_clients.httpx, "AsyncClient", lambda **kwargs: MockClient())
+    result = asyncio.run(exchange_clients.verify_credentials(
+        "bybit", "testnet", "example-api-key", "example-api-secret"
+    ))
+    assert result["can_trade"] is None
+    assert result["withdrawal_access_detected"] is None
+    assert result["withdrawal_check"] == "manual_required"
+
+
+def test_phantom_user_lock_blocks_even_read_only_exchange_account_snapshot(monkeypatch):
+    from app import platform_api
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        user = db.query(User).filter(User.telegram_id == "11111").one()
+        user.phantom_locked = True
+        connection = ExchangeConnection(
+            owner_telegram_id="11111", exchange="binance", environment="testnet",
+            api_key_encrypted="cipher-key", api_secret_encrypted="cipher-secret",
+            connection_status="connected", emergency_lock=False,
+        )
+        db.add(connection); db.commit(); connection_id=connection.id
+    finally:
+        db.close()
+    decrypt = lambda value: (_ for _ in ()).throw(AssertionError("must not decrypt under Phantom"))
+    fetch = AsyncMock()
+    monkeypatch.setattr(platform_api, "decrypt_secret", decrypt)
+    monkeypatch.setattr(platform_api, "fetch_account_snapshot", fetch)
+    app = build_platform_test_app(monkeypatch, factory)
+    response = TestClient(app).get(
+        f"/api/platform/exchanges/{connection_id}/account",
+        headers={"X-Test-Telegram-ID": "11111"},
+    )
+    assert response.status_code == 423
+    fetch.assert_not_awaited()
+
+
+def test_signal_delivery_skips_fully_delivered_and_exhausted_signals(monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, "aiogram", types.SimpleNamespace(Bot=object))
+    from app import worker
+    from app.database import SignalDelivery
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        done = Signal(symbol="BTCUSDT", timeframe="1h", direction="BUY", grade="A", score=90, strategy="intraday", status="sent")
+        failed = Signal(symbol="ETHUSDT", timeframe="1h", direction="BUY", grade="A", score=90, strategy="intraday", status="new")
+        db.add_all([done, failed]); db.flush()
+        db.add_all([
+            SignalDelivery(signal_id=done.id, telegram_id="11111", status="delivered", attempts=1),
+            SignalDelivery(signal_id=failed.id, telegram_id="11111", status="failed", attempts=5),
+        ])
+        db.commit()
+    finally:
+        db.close()
+
+    class FakeBot:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def send_message(self, **kwargs): raise AssertionError("no completed delivery should be sent again")
+
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    monkeypatch.setattr(worker, "settings", SimpleNamespace(bot_token="test-token"))
+    monkeypatch.setattr(worker, "Bot", lambda token: FakeBot())
+    monkeypatch.setattr(worker, "is_quality_signal_values", lambda *args: True)
+    assert asyncio.run(worker.deliver_pending_signals()) == 0
