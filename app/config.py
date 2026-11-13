@@ -1,4 +1,3 @@
-
 import os
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -70,10 +69,8 @@ class Settings:
     @property
     def allowed_user_ids(self) -> set[str]:
         ids = parse_user_ids(self.allowed_telegram_ids)
-
         if self.owner_telegram_id:
             ids.add(self.owner_telegram_id)
-
         return ids
 
 
@@ -81,13 +78,8 @@ class Settings:
 def get_settings() -> Settings:
     return Settings(
         environment=os.getenv("ENVIRONMENT", "production"),
-        bot_token=os.getenv(
-            "BOT_TOKEN",
-            os.getenv("TELEGRAM_BOT_TOKEN", ""),
-        ),
-        telegram_webhook_secret=os.getenv(
-            "TELEGRAM_WEBHOOK_SECRET", ""
-        ),
+        bot_token=os.getenv("BOT_TOKEN", os.getenv("TELEGRAM_BOT_TOKEN", "")),
+        telegram_webhook_secret=os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
         webhook_url=os.getenv("WEBHOOK_URL", ""),
         mini_app_url=os.getenv("MINI_APP_URL", ""),
         owner_telegram_id=os.getenv("OWNER_TELEGRAM_ID", ""),
@@ -95,7 +87,7 @@ def get_settings() -> Settings:
         database_url=os.getenv("DATABASE_URL", "sqlite:///./trading_intelligence.db"),
         secret_key=os.getenv("SECRET_KEY", ""),
         exchange_encryption_key=os.getenv("EXCHANGE_ENCRYPTION_KEY", ""),
-        live_trading_enabled=False,  # Hard-disabled until a separately tested live-execution release.
+        live_trading_enabled=False,
         max_users=max(1, min(int(os.getenv("MAX_USERS", "4")), 20)),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
@@ -107,16 +99,17 @@ def get_settings() -> Settings:
         bybit_base_url="https://api.bybit.com",
         scan_interval_seconds=300,
         request_timeout_seconds=15,
-        # Telegram signal delivery is deliberately OFF unless both the
-        # explicit enable flag and a UTC activation cutoff are supplied.
         signal_notifications_enabled=parse_bool(
             os.getenv("SIGNAL_NOTIFICATIONS_ENABLED"), False
         ),
         signal_notifications_start_after=parse_utc_datetime(
             os.getenv("SIGNAL_NOTIFICATIONS_START_AFTER")
         ),
+        # Deliver up to five distinct eligible signals per scanner cycle.
+        # The worker still enforces the queue, post-activation cutoff,
+        # quality gate, recipient deduplication and per-message delay.
         signal_notifications_max_signals_per_cycle=max(
-            1, min(int(os.getenv("SIGNAL_NOTIFICATIONS_MAX_SIGNALS_PER_CYCLE", "1")), 3)
+            1, min(int(os.getenv("SIGNAL_NOTIFICATIONS_MAX_SIGNALS_PER_CYCLE", "5")), 5)
         ),
         signal_notifications_delay_seconds=max(
             1.0, min(float(os.getenv("SIGNAL_NOTIFICATIONS_DELAY_SECONDS", "2")), 10.0)
