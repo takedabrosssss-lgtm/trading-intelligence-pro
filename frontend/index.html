@@ -119,5 +119,78 @@
 <script src="mirage-release.js?v=20261113-repair1"></script>
 <script src="mirage-luxe.js?v=20261113-repair1"></script>
 <script src="mirage-navigation.js?v=20261113-repair1"></script>
+
+<!-- MIRAGE UI hotfix: initialize the analytics loader if Mini App opens
+     directly on the Analytics page. The mobile-first module listens for this
+     exact event and performs read-only fetches; no scanner/trading code runs. -->
+<script>
+(() => {
+  "use strict";
+  if (window.__MIRAGE_ANALYTICS_BOOTSTRAP__) return;
+  window.__MIRAGE_ANALYTICS_BOOTSTRAP__ = true;
+
+  const css = document.createElement("style");
+  css.id = "mirage-analytics-contrast-hotfix";
+  css.textContent = `
+    body[data-mirage-mode="stealth"] .mi-panel {
+      color: #26343b !important;
+      background: #fff !important;
+      border-color: #e1e8eb !important;
+    }
+    body[data-mirage-mode="stealth"] .mi-panel h3,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-stat b,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-result-head b,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-folds b {
+      color: #26343b !important;
+      opacity: 1 !important;
+    }
+    body[data-mirage-mode="stealth"] .mi-panel .mi-stat small,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-sub,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-foot,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-result,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-status-line,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-result-head span,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-folds div {
+      color: #687780 !important;
+      opacity: 1 !important;
+    }
+    body[data-mirage-mode="stealth"] .mi-panel .mi-stat,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-folds,
+    body[data-mirage-mode="stealth"] .mi-panel .mi-table-wrap {
+      background: #f7f9fa !important;
+      border-color: #e2e9ec !important;
+    }
+    body[data-mirage-mode="stealth"] .mi-panel .mi-table td {
+      color: #34444c !important;
+    }
+    body[data-mirage-mode="spectre"] .mi-panel .mi-stat small,
+    body[data-mirage-mode="spectre"] .mi-panel .mi-sub,
+    body[data-mirage-mode="spectre"] .mi-panel .mi-foot,
+    body[data-mirage-mode="spectre"] .mi-panel .mi-result,
+    body[data-mirage-mode="spectre"] .mi-panel .mi-status-line,
+    body[data-mirage-mode="spectre"] .mi-panel .mi-folds div {
+      color: #a69bbd !important;
+      opacity: 1 !important;
+    }
+  `;
+  document.head.appendChild(css);
+
+  function bootstrapAnalytics() {
+    const analyticsPage = document.getElementById("markets");
+    if (!analyticsPage || !analyticsPage.classList.contains("active")) return;
+    window.dispatchEvent(new CustomEvent("mirage:pagechange", {
+      detail: { page: "markets", source: "initial-page-bootstrap" }
+    }));
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      window.setTimeout(bootstrapAnalytics, 0);
+    }, { once: true });
+  } else {
+    window.setTimeout(bootstrapAnalytics, 0);
+  }
+})();
+</script>
 </body>
 </html>
