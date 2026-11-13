@@ -1,5 +1,6 @@
 
 import os
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -10,6 +11,24 @@ def parse_user_ids(value: str) -> set[str]:
         for item in value.split(",")
         if item.strip()
     }
+
+
+def parse_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_utc_datetime(value: str | None) -> datetime | None:
+    if not value or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,10 @@ class Settings:
 
     scan_interval_seconds: int
     request_timeout_seconds: int
+    signal_notifications_enabled: bool
+    signal_notifications_start_after: datetime | None
+    signal_notifications_max_signals_per_cycle: int
+    signal_notifications_delay_seconds: float
 
     @property
     def telegram_token(self) -> str:
@@ -84,6 +107,20 @@ def get_settings() -> Settings:
         bybit_base_url="https://api.bybit.com",
         scan_interval_seconds=300,
         request_timeout_seconds=15,
+        # Telegram signal delivery is deliberately OFF unless both the
+        # explicit enable flag and a UTC activation cutoff are supplied.
+        signal_notifications_enabled=parse_bool(
+            os.getenv("SIGNAL_NOTIFICATIONS_ENABLED"), False
+        ),
+        signal_notifications_start_after=parse_utc_datetime(
+            os.getenv("SIGNAL_NOTIFICATIONS_START_AFTER")
+        ),
+        signal_notifications_max_signals_per_cycle=max(
+            1, min(int(os.getenv("SIGNAL_NOTIFICATIONS_MAX_SIGNALS_PER_CYCLE", "1")), 3)
+        ),
+        signal_notifications_delay_seconds=max(
+            1.0, min(float(os.getenv("SIGNAL_NOTIFICATIONS_DELAY_SECONDS", "2")), 10.0)
+        ),
     )
 
 

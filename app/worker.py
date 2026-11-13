@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 
 from aiogram import Bot
-from sqlalchemy import or_, text
+from sqlalchemy import text
 
 from app.config import settings
 from app.database import SessionLocal, Signal, SignalDelivery, User, init_db, engine
@@ -211,52 +211,108 @@ def format_signal_message(signal):
     return "\n".join(lines)
 
 
+def notifications_are_armed() -> bool:
+    """Fail closed: delivery needs an explicit flag and a UTC cutoff."""
+    return bool(
+        getattr(settings, "signal_notifications_enabled", False)
+        and getattr(settings, "signal_notifications_start_after", None)
+        and settings.bot_token
+    )
+
+
+def enqueue_signal_deliveries(db, signal) -> int:
+    """Queue recipients only for signals created after explicit activation.
+
+    This is called in the same DB transaction as signal creation. Existing
+    historical signals are never backfilled into the Telegram queue.
+    """
+    if not notifications_are_armed():
+        return 0
+    cutoff = settings.signal_notifications_start_after
+    created_at = signal.created_at
+    if created_at is None:
+        return 0
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    if created_at < cutoff:
+        return 0
+    recipients = db.query(User).filter(User.is_active.is_(True)).all()
+    queued = 0
+    for recipient in recipients:
+        exists = db.query(SignalDelivery.id).filter(
+            SignalDelivery.signal_id == signal.id,
+            SignalDelivery.telegram_id == recipient.telegram_id,
+        ).first()
+        if exists:
+            continue
+        db.add(SignalDelivery(
+            signal_id=signal.id,
+            telegram_id=recipient.telegram_id,
+            status="pending",
+            attempts=0,
+        ))
+        queued += 1
+    return queued
+
+
 async def deliver_pending_signals():
-    if not settings.bot_token:
+    """Deliver only explicitly enqueued, post-activation signals.
+
+    No historical sweep, no implicit retries for signals without queue rows,
+    one signal per cycle by default, and a delay between recipient messages.
+    """
+    if not notifications_are_armed():
         return 0
 
     db = SessionLocal()
     delivered = 0
+    cutoff = settings.signal_notifications_start_after
     try:
-        recipients = db.query(User).filter(User.is_active.is_(True)).order_by(User.created_at.asc()).all()
-        if not recipients:
+        pending_signals = (
+            db.query(Signal)
+            .join(SignalDelivery, SignalDelivery.signal_id == Signal.id)
+            .filter(
+                Signal.created_at >= cutoff,
+                SignalDelivery.created_at >= cutoff,
+                SignalDelivery.status == "pending",
+                SignalDelivery.attempts < 5,
+                Signal.status.in_(["new", "sent", "paper_opened", "paper_closed", "paper_skipped"]),
+            )
+            .order_by(Signal.id.asc())
+            .limit(settings.signal_notifications_max_signals_per_cycle)
+            .all()
+        )
+        if not pending_signals:
             return 0
-        has_delivery = db.query(SignalDelivery.id).filter(
-            SignalDelivery.signal_id == Signal.id
-        ).exists()
-        has_retry = db.query(SignalDelivery.id).filter(
-            SignalDelivery.signal_id == Signal.id,
-            SignalDelivery.status == "pending",
-            SignalDelivery.attempts < 5,
-        ).exists()
-        pending = (db.query(Signal).filter(
-            Signal.status.in_(["new", "sent", "paper_opened"]),
-            Signal.created_at >= datetime.now(timezone.utc) - timedelta(days=3),
-            or_(~has_delivery, has_retry),
-        ).order_by(Signal.id.asc()).limit(100).all())
-        if not pending:
-            return 0
+
         async with Bot(token=settings.bot_token) as bot:
-            for signal in pending:
+            for signal in pending_signals:
                 if not is_quality_signal_values(signal.direction, signal.score, signal.grade):
-                    signal.status = "filtered"
+                    rows = db.query(SignalDelivery).filter(
+                        SignalDelivery.signal_id == signal.id,
+                        SignalDelivery.status == "pending",
+                    ).all()
+                    for row in rows:
+                        row.status = "failed"
+                        row.last_error = "Signal no longer passes quality gate"
                     db.commit()
                     continue
-                any_delivered = False
-                for recipient in recipients:
-                    row = db.query(SignalDelivery).filter(
+
+                deliveries = (
+                    db.query(SignalDelivery, User)
+                    .join(User, User.telegram_id == SignalDelivery.telegram_id)
+                    .filter(
                         SignalDelivery.signal_id == signal.id,
-                        SignalDelivery.telegram_id == recipient.telegram_id,
-                    ).first()
-                    if row and row.status == "delivered":
-                        continue
-                    if row is None:
-                        row = SignalDelivery(signal_id=signal.id, telegram_id=recipient.telegram_id, status="pending", attempts=0)
-                        db.add(row)
-                        db.flush()
-                    if row.attempts >= 5:
-                        row.status = "failed"
-                        continue
+                        SignalDelivery.created_at >= cutoff,
+                        SignalDelivery.status == "pending",
+                        SignalDelivery.attempts < 5,
+                        User.is_active.is_(True),
+                    )
+                    .order_by(User.created_at.asc())
+                    .all()
+                )
+                any_delivered = False
+                for row, recipient in deliveries:
                     try:
                         await bot.send_message(
                             chat_id=recipient.telegram_id,
@@ -274,8 +330,13 @@ async def deliver_pending_signals():
                         row.attempts += 1
                         row.status = "pending" if row.attempts < 5 else "failed"
                         row.last_error = type(exc).__name__[:240]
-                        logger.warning("Signal delivery failed signal=%s recipient=%s error=%s",signal.id,recipient.telegram_id,type(exc).__name__)
+                        logger.warning(
+                            "Signal delivery failed signal=%s recipient=%s error=%s",
+                            signal.id, recipient.telegram_id, type(exc).__name__,
+                        )
                     db.commit()
+                    await asyncio.sleep(settings.signal_notifications_delay_seconds)
+
                 if any_delivered and signal.status in {"new", "sent"}:
                     signal.status = "sent"
                     db.commit()
@@ -367,31 +428,31 @@ async def scan_market():
                         continue
 
                     # 6. Сохранение сигнала
-                    db.add(
-                        Signal(
-                            symbol=signal["symbol"],
-                            market="crypto",
-                            timeframe=signal["timeframe"],
-                            direction=signal["direction"],
-                            grade=signal["grade"],
-                            score=signal["score"],
-                            confidence=signal.get("confidence"),
-                            entry_price=signal["entry_price"],
-                            stop_loss=signal["stop_loss"],
-                            take_profit=signal["take_profit"],
-                            strategy=signal["strategy"],
-                            reasoning="; ".join(
-                                signal.get("reasoning") or []
-                            ),
-                            indicators=signal.get("indicators"),
-                            status="new",
-                        )
+                    saved_signal = Signal(
+                        symbol=signal["symbol"],
+                        market="crypto",
+                        timeframe=signal["timeframe"],
+                        direction=signal["direction"],
+                        grade=signal["grade"],
+                        score=signal["score"],
+                        confidence=signal.get("confidence"),
+                        entry_price=signal["entry_price"],
+                        stop_loss=signal["stop_loss"],
+                        take_profit=signal["take_profit"],
+                        strategy=signal["strategy"],
+                        reasoning="; ".join(signal.get("reasoning") or []),
+                        indicators=signal.get("indicators"),
+                        status="new",
                     )
-
+                    db.add(saved_signal)
+                    db.flush()
+                    queued = enqueue_signal_deliveries(db, saved_signal)
                     db.commit()
 
                     saved += 1
                     stats["eligible_saved"] += 1
+                    if queued:
+                        stats["telegram_queued"] += queued
 
                     logger.info(
                         "Signal saved %s %s %s strength=%.0f grade=%s",
@@ -457,6 +518,17 @@ async def run_worker():
 
             init_db()
             ensure_database_schema()
+            if notifications_are_armed():
+                logger.warning(
+                    "Telegram signal notifications ARMED after %s; max_signals_per_cycle=%s",
+                    settings.signal_notifications_start_after.isoformat(),
+                    settings.signal_notifications_max_signals_per_cycle,
+                )
+            else:
+                logger.warning(
+                    "Telegram signal notifications DISABLED (fail-closed); "
+                    "no historical or new signals will be sent"
+                )
 
             while True:
                 try:
