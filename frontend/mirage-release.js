@@ -48,7 +48,7 @@
       link = document.createElement("link");
       link.id = "mirage-release-css";
       link.rel = "stylesheet";
-      link.href = "mirage-release.css?v=20261113-r1";
+      link.href = "mirage-release.css?v=20261113-main1";
     }
     document.head.appendChild(link);
   }
@@ -79,9 +79,10 @@
           <div class="mp-field"><label for="mp-api-key">API Key</label><input id="mp-api-key" name="api_key" type="password" minlength="8" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder="Вставь API Key"></div>
           <div class="mp-field"><label for="mp-api-secret">API Secret</label><input id="mp-api-secret" name="api_secret" type="password" minlength="8" maxlength="256" autocomplete="new-password" autocapitalize="off" spellcheck="false" required placeholder="Вставь API Secret"></div>
           <div class="mp-field"><label for="mp-label">Название подключения (необязательно)</label><input id="mp-label" name="label" maxlength="100" autocomplete="off" placeholder="Например, мой Bybit"></div>
-          <label class="mirage-withdrawal-confirm"><input id="mp-withdrawals-confirm" type="checkbox" required> Подтверждаю, что отключил Withdrawals в настройках API-ключа. Для Bybit это подтверждение пользователя — приложение не может проверить это разрешение read-only запросом.</label>
+          <label class="mirage-withdrawal-confirm"><input id="mp-readonly-confirm" type="checkbox" required> Подтверждаю, что ключ имеет только права чтения: торговля отключена.</label>
+          <label class="mirage-withdrawal-confirm"><input id="mp-withdrawals-confirm" type="checkbox" required> Подтверждаю, что Withdrawals отключены. Для Bybit и торговых прав приложение требует ручную проверку в настройках API-ключа.</label>
           <button class="mirage-platform-primary" id="mp-connect" type="submit">Проверить и подключить</button>
-          <div class="mirage-platform-note">Важно: не включай Withdrawals. Binance сообщает о разрешении вывода в ответе API; для Bybit нужно вручную убедиться в настройках ключа, так как read-only проверка не подтверждает это разрешение.</div>
+          <div class="mirage-platform-note">Важно: используй ключ только для чтения. Торговые и Withdrawals-разрешения должны быть выключены вручную в настройках API-ключа. Bybit не раскрывает эти права через используемую read-only проверку; приложение не может гарантировать их состояние.</div>
           <p id="mp-connect-status" role="status"></p>
         </form>
         <div id="mp-connections"><p>Загрузка подключений…</p></div>
@@ -89,7 +90,8 @@
       <section class="mirage-platform-card" id="mirage-phantom-card">
         <h2>Протокол Фантом</h2>
         <p>Аварийная блокировка новых действий MIRAGE с подключёнными биржами. В этой сборке у MIRAGE нет активных live-ордеров, поэтому протокол блокирует соединения, но не закрывает позиции и не отзывает ключ на стороне биржи.</p>
-        <button type="button" class="mirage-platform-danger" id="mp-phantom">Заблокировать подключения</button>
+        <button type="button" class="mirage-platform-danger" id="mp-phantom">Активировать PROTOCOL PHANTOM</button>
+        <button type="button" class="mirage-platform-primary" id="mp-phantom-unlock" hidden>Разблокировать MIRAGE</button>
         <p id="mp-phantom-status" role="status"></p>
       </section>
       <section class="mirage-platform-card mirage-platform-hidden" id="mirage-user-management">
@@ -110,6 +112,12 @@
     if (live) live.textContent = "Реальные ордера заблокированы в этом релизе";
     const users = $("#mirage-user-management");
     if (users) users.classList.toggle("mirage-platform-hidden", !data.is_owner);
+    const phantomButton = $("#mp-phantom");
+    const unlockButton = $("#mp-phantom-unlock");
+    if (phantomButton) phantomButton.hidden = Boolean(data.phantom_locked);
+    if (unlockButton) unlockButton.hidden = !data.phantom_locked;
+    const phantomCard = $("#mirage-phantom-card");
+    if (phantomCard) phantomCard.dataset.locked = data.phantom_locked ? "true" : "false";
     if (data.ui_mode && window.MIRAGE_MODES?.setImmediate) {
       state.applyingServerMode = true;
       window.MIRAGE_MODES.setImmediate(data.ui_mode);
@@ -124,8 +132,9 @@
       state.connections = data.connections || [];
       host.innerHTML = state.connections.length ? state.connections.map(row => `
         <div class="mirage-platform-row">
-          <div><b>${esc(row.exchange.toUpperCase())}${row.label ? ` · ${esc(row.label)}` : ""}</b><small>${esc(row.environment)} · ${esc(row.status)} · ${row.can_trade ? "Trade permission reported" : "Read-only / trade not confirmed"}</small><small>${row.withdrawal_check === "manual_required" ? "Права Withdrawals проверь вручную на Bybit" : "Binance reports withdrawals disabled"}${row.emergency_lock ? " · LOCKED" : ""}</small></div>
-          <button type="button" class="mirage-platform-danger" data-exchange-disconnect="${Number(row.id)}">Отключить</button>
+          <div><b>${esc(row.exchange.toUpperCase())}${row.label ? ` · ${esc(row.label)}` : ""}</b><small>${esc(row.environment)} · ${esc(row.status)} · ${row.can_trade === true ? "Exchange reports account trading enabled" : row.can_trade === false ? "Exchange reports account trading disabled" : "Trading permission not verifiable by this read-only check"}</small><small>${row.withdrawal_check === "manual_required" ? "Права Withdrawals проверь вручную на Bybit" : "Binance reports withdrawals disabled"}${row.emergency_lock ? " · LOCKED" : ""}</small></div>
+          <div class="mirage-platform-actions">${row.account_snapshot_available ? `<button type="button" class="mirage-platform-primary" data-exchange-account="${Number(row.id)}">Баланс и активы</button>` : ""}<button type="button" class="mirage-platform-danger" data-exchange-disconnect="${Number(row.id)}">Отключить</button></div>
+          <div class="mirage-platform-account" id="mp-account-${Number(row.id)}" aria-live="polite"></div>
         </div>`).join("") : `<p>Подключений пока нет.</p>`;
     } catch (error) {
       host.innerHTML = `<p class="mirage-platform-error">${esc(error.message)}</p>`;
@@ -159,12 +168,14 @@
         environment: $("#mp-environment").value,
         api_key: apiKey.value,
         api_secret: apiSecret.value,
+        confirm_read_only: $("#mp-readonly-confirm").checked,
         confirm_withdrawals_disabled: $("#mp-withdrawals-confirm").checked,
         label: $("#mp-label").value.trim() || null
       };
       const data = await request("/api/platform/exchanges/connect", { method: "POST", body: JSON.stringify(body) });
       apiKey.value = "";
       apiSecret.value = "";
+      $("#mp-readonly-confirm").checked = false;
       $("#mp-withdrawals-confirm").checked = false;
       $("#mp-label").value = "";
       setStatus(status, data.message || "Подключение проверено и сохранено.", "success");
@@ -178,6 +189,22 @@
       button.disabled = false;
     }
   }
+  async function loadExchangeAccount(id) {
+    const host = $(`#mp-account-${id}`);
+    if (!host) return;
+    host.textContent = "Запрашиваем данные аккаунта…";
+    try {
+      const data = await request(`/api/platform/exchanges/${id}/account`);
+      const snapshot = data.snapshot || {};
+      const assets = Array.isArray(snapshot.assets) ? snapshot.assets : [];
+      const total = snapshot.total_equity_usd == null
+        ? "Оценка общего баланса не предоставлена биржей"
+        : `Общая стоимость: $${Number(snapshot.total_equity_usd).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+      host.innerHTML = `<div class="mirage-platform-note"><b>${esc(total)}</b>${snapshot.total_wallet_balance_usd == null ? "" : `<small> Wallet: $${Number(snapshot.total_wallet_balance_usd).toLocaleString("en-US", { maximumFractionDigits: 2 })}</small>`}<div class="mirage-platform-assets">${assets.length ? assets.map(asset => `<div><b>${esc(asset.asset)}</b><span>${Number(asset.total || 0).toLocaleString("en-US", { maximumFractionDigits: 8 })}${asset.usd_value == null ? "" : ` · $${Number(asset.usd_value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</span></div>`).join("") : "Активы с ненулевым балансом не найдены."}</div><small>${esc(snapshot.note || "")}</small></div>`;
+    } catch (error) {
+      host.textContent = error.message || "Не удалось загрузить баланс";
+    }
+  }
   async function disconnectExchange(id) {
     const ok = window.confirm("Удалить сохранённые MIRAGE API-ключи? Это не отзывает ключ на самой бирже. После удаления при необходимости отзови его вручную в кабинете биржи.");
     if (!ok) return;
@@ -188,7 +215,7 @@
     } catch (error) { toast(error.message); }
   }
   async function doPhantom() {
-    const ok = window.confirm("ПРОТОКОЛ ФАНТОМ\n\nMIRAGE заблокирует свои подключения к биржам и переключит интерфейс в Paper Trading. В этой версии нет механизма live-исполнения: позиции бирж, включая открытые вручную, автоматически закрываться не будут. API-ключи на бирже не отзываются. Продолжить?");
+    const ok = window.confirm("PROTOCOL PHANTOM\n\nMIRAGE включит постоянную аварийную блокировку аккаунта, переведёт торговый режим в Paper и заблокирует все сохранённые подключения. В этой версии нет live-исполнения: биржевые ордера не отменяются, позиции не закрываются, API-ключи не отзываются. Для повторного подключения потребуется отдельная разблокировка и проверка ключей. Продолжить?");
     if (!ok) return;
     const button = $("#mp-phantom");
     const status = $("#mp-phantom-status");
@@ -202,6 +229,26 @@
       await loadConnections();
     } catch (error) { setStatus(status, error.message, "error"); }
     finally { button.disabled = false; }
+  }
+  async function unlockPhantom() {
+    const confirmation = window.prompt("Для снятия аварийной блокировки введи точно: UNLOCK MIRAGE");
+    if (confirmation !== "UNLOCK MIRAGE") return;
+    const button = $("#mp-phantom-unlock");
+    const status = $("#mp-phantom-status");
+    if (button) button.disabled = true;
+    setStatus(status, "Снимаем блокировку аккаунта…");
+    try {
+      const data = await request("/api/platform/phantom/unlock", {
+        method: "POST", body: JSON.stringify({ confirmation })
+      });
+      setStatus(status, data.message, "success");
+      await loadProfile();
+      await loadConnections();
+    } catch (error) {
+      setStatus(status, error.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
   async function inviteUser(event) {
     event.preventDefault();
@@ -240,7 +287,10 @@
     $("#mirage-exchange-form")?.addEventListener("submit", connectExchange);
     $("#mirage-invite-form")?.addEventListener("submit", inviteUser);
     $("#mp-phantom")?.addEventListener("click", doPhantom);
+    $("#mp-phantom-unlock")?.addEventListener("click", unlockPhantom);
     document.addEventListener("click", event => {
+      const account = event.target.closest("[data-exchange-account]");
+      if (account) loadExchangeAccount(Number(account.dataset.exchangeAccount));
       const disconnect = event.target.closest("[data-exchange-disconnect]");
       if (disconnect) disconnectExchange(Number(disconnect.dataset.exchangeDisconnect));
       const disable = event.target.closest("[data-user-disable]");
@@ -258,6 +308,9 @@
       }
     });
     modeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-mirage-mode"] });
+    const initialMode = document.body.dataset.mirageMode || "stealth";
+    const themeMeta = $('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.content = initialMode === "spectre" ? "#07090c" : "#f4f7f8";
   }
   async function start() {
     addReleaseStyles();

@@ -439,3 +439,18 @@ body[data-mirage-mode="stealth"] .m4-table th { color: #71808a !important; }
 body[data-mirage-mode="stealth"] .m4-table td { color: #26353d !important; border-color: #e2e9ec !important; }
 body[data-mirage-mode="spectre"] .m4-table th { color: #99a6af !important; }
 body[data-mirage-mode="spectre"] .m4-table td { color: #e7edf0 !important; border-color: #26323a !important; }
+
+/* Exchange account snapshot and persistent PROTOCOL PHANTOM state. */
+.mirage-platform-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+.mirage-platform-actions button { min-height: 36px; padding: 8px 11px; }
+.mirage-platform-account { width: 100%; min-width: 0; margin-top: 8px; font-size: 11px; overflow-wrap: anywhere; }
+.mirage-platform-assets { display: grid; gap: 5px; margin: 9px 0; }
+.mirage-platform-assets > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; border-top: 1px solid var(--mw-line, rgba(120,140,160,.2)); }
+.mirage-platform-assets > div b { flex: 0 0 auto; }
+.mirage-platform-assets > div span { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#mirage-phantom-card[data-locked="true"] { border-color: rgba(205, 70, 86, .55) !important; }
+#mirage-phantom-card button[hidden] { display: none !important; }
+@media (max-width: 420px) {
+  .mirage-platform-actions { display: grid; grid-template-columns: 1fr; }
+  .mirage-platform-actions button { width: 100%; }
+}
