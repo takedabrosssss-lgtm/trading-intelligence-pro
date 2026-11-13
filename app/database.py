@@ -65,6 +65,7 @@ class User(Base):
     invited_by = Column(String(32), nullable=True)
     ui_mode = Column(String(20), default="stealth", nullable=False)
     trading_mode = Column(String(20), default="paper", nullable=False)
+    phantom_locked = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
@@ -101,7 +102,7 @@ class ExchangeConnection(Base):
     api_key_encrypted = Column(Text, nullable=False)
     api_secret_encrypted = Column(Text, nullable=False)
     connection_status = Column(String(30), default="connected", nullable=False)
-    can_trade = Column(Boolean, default=False, nullable=False)
+    can_trade = Column(Boolean, default=False, nullable=True)
     withdrawal_access_detected = Column(Boolean, default=False, nullable=True)
     emergency_lock = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now)

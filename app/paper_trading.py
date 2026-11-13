@@ -1,4 +1,5 @@
 import logging
+from sqlalchemy import and_
 from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.database import PaperAccount, Position, SessionLocal, Signal, Trade, User
@@ -43,7 +44,7 @@ async def update_open_positions():
         ids=[row[0] for row in db.query(Position.id).filter(Position.status=="open").all()]
         for position_id in ids:
             try:
-                position=db.query(Position).filter(Position.id==position_id,Position.status=="open").first()
+                position=db.query(Position).filter(Position.id==position_id,Position.status=="open").with_for_update().first()
                 if position is None: continue
                 quote=await market_data.get_price(position.symbol); price=float(quote["price"])
                 if price<=0: continue
@@ -76,13 +77,31 @@ async def update_open_positions():
 async def open_paper_positions():
     db=SessionLocal(); opened=0
     try:
-        signal_ids=[row[0] for row in db.query(Signal.id).filter(
-            Signal.status.in_(["new","sent"])
+        fresh_ids = [row[0] for row in db.query(Signal.id).filter(
+            Signal.status.in_(["new", "sent"])
         ).order_by(Signal.id.asc()).limit(100).all()]
+        # A shared signal may open for some users while another user's account is
+        # temporarily blocked by risk/position limits. Retry only the missing
+        # user-account deliveries; existing positions prevent duplicate entries.
+        retry_ids = [row[0] for row in db.query(Signal.id)
+            .join(PaperAccount, PaperAccount.strategy == Signal.strategy)
+            .join(User, User.telegram_id == PaperAccount.owner_telegram_id)
+            .outerjoin(Position, and_(
+                Position.signal_id == Signal.id,
+                Position.account_id == PaperAccount.id,
+            ))
+            .filter(
+                Signal.status == "paper_opened",
+                PaperAccount.is_active.is_(True),
+                User.is_active.is_(True),
+                Position.id.is_(None),
+            )
+            .distinct().order_by(Signal.id.asc()).limit(100).all()]
+        signal_ids = sorted(set(fresh_ids + retry_ids))[:100]
         for signal_id in signal_ids:
             try:
                 signal=db.query(Signal).filter(Signal.id==signal_id).first()
-                if signal is None or signal.status not in {"new","sent"}: continue
+                if signal is None or signal.status not in {"new", "sent", "paper_opened"}: continue
                 if not is_quality_signal_values(signal.direction,signal.score,signal.grade):
                     signal.status="paper_skipped"; db.commit(); continue
                 created=_as_utc(signal.created_at)

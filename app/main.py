@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import (
-    AppSetting, PaperAccount, Position, Trade, User, SessionLocal, init_db,
+    PaperAccount, Position, Trade, SessionLocal, init_db,
 )
 from app.instance_lock import acquire_advisory_lock, release_advisory_lock
 from app.market_data import market_data
@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
     bot_task = asyncio.create_task(run_bot_supervisor(), name="telegram-bot-polling")
     app.state.worker_task = worker_task
     app.state.bot_task = bot_task
-    logger.info("MIRAGE 4.3 staging release started")
+    logger.info("MIRAGE 4.3.1 main release started")
     logger.info("Background scanner and Telegram bot tasks scheduled")
     try:
         yield
@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
         logger.info("MIRAGE stopped")
 
 
-app = FastAPI(title="MIRAGE", version="4.3.0", lifespan=lifespan)
+app = FastAPI(title="MIRAGE", version="4.3.1", lifespan=lifespan)
 app.include_router(build_router(require_user))
 app.include_router(build_robustness_router(require_user))
 app.include_router(build_mirage4_router(require_user, app, APP_STARTED_AT))
@@ -136,7 +136,7 @@ app.include_router(build_news_router(require_user))
 app.include_router(build_platform_router(require_user))
 
 
-@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/health", methods=["GET", "HEAD"], include_in_schema=False)
 async def health():
     worker = getattr(app.state, "worker_task", None)
     worker_running = bool(worker and not worker.done())

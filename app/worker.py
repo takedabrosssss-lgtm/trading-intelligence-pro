@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 
 from aiogram import Bot
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 from app.config import settings
 from app.database import SessionLocal, Signal, SignalDelivery, User, init_db, engine
@@ -221,8 +221,19 @@ async def deliver_pending_signals():
         recipients = db.query(User).filter(User.is_active.is_(True)).order_by(User.created_at.asc()).all()
         if not recipients:
             return 0
-        pending = (db.query(Signal).filter(Signal.status.in_(["new", "sent"]))
-                   .order_by(Signal.id.asc()).limit(100).all())
+        has_delivery = db.query(SignalDelivery.id).filter(
+            SignalDelivery.signal_id == Signal.id
+        ).exists()
+        has_retry = db.query(SignalDelivery.id).filter(
+            SignalDelivery.signal_id == Signal.id,
+            SignalDelivery.status == "pending",
+            SignalDelivery.attempts < 5,
+        ).exists()
+        pending = (db.query(Signal).filter(
+            Signal.status.in_(["new", "sent", "paper_opened"]),
+            Signal.created_at >= datetime.now(timezone.utc) - timedelta(days=3),
+            or_(~has_delivery, has_retry),
+        ).order_by(Signal.id.asc()).limit(100).all())
         if not pending:
             return 0
         async with Bot(token=settings.bot_token) as bot:
@@ -265,7 +276,7 @@ async def deliver_pending_signals():
                         row.last_error = type(exc).__name__[:240]
                         logger.warning("Signal delivery failed signal=%s recipient=%s error=%s",signal.id,recipient.telegram_id,type(exc).__name__)
                     db.commit()
-                if any_delivered:
+                if any_delivered and signal.status in {"new", "sent"}:
                     signal.status = "sent"
                     db.commit()
     except Exception:

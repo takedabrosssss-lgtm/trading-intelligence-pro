@@ -79,6 +79,12 @@ def _ensure_user_records_locked(user_data: dict, telegram_id: str) -> User:
                 user = db.query(User).filter(User.telegram_id == telegram_id).first()
                 if user is None:
                     raise
+                if not user.is_active:
+                    raise PermissionError("This MIRAGE account is disabled")
+                user.username = (user_data.get("username") or "")[:100] or user.username
+                user.first_name = (user_data.get("first_name") or "")[:100] or user.first_name
+                if is_owner:
+                    user.role = "owner"
         else:
             if not user.is_active:
                 raise PermissionError("This MIRAGE account is disabled")

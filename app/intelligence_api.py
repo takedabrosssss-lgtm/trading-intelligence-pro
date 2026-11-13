@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import SessionLocal, PaperAccount, Position, Trade
-from app.access import user_id_from_claims, user_account_ids
+from app.access import user_id_from_claims
 from app.market_data import market_data
 from app.intelligence import analyze_market, backtest
 from app.strategy_lab import compare_strategies

@@ -31,6 +31,7 @@ def prepare_legacy_schema() -> None:
                 "invited_by": "VARCHAR(32)",
                 "ui_mode": "VARCHAR(20) NOT NULL DEFAULT 'stealth'",
                 "trading_mode": "VARCHAR(20) NOT NULL DEFAULT 'paper'",
+                "phantom_locked": "BOOLEAN NOT NULL DEFAULT FALSE",
             }
             for name, definition in additions.items():
                 if name not in columns:

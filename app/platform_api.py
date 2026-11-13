@@ -10,12 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
-from app.access import STRATEGY_ACCOUNTS
+from app.access import STRATEGY_ACCOUNTS, user_id_from_claims
 from app.config import settings
 from app.database import SessionLocal, User, PaperAccount, Position, ExchangeConnection, ExchangeAuditEvent
-from app.exchange_clients import verify_credentials
-from app.security import encrypt_secret, CredentialEncryptionUnavailable
-from app.access import user_id_from_claims, user_account_ids
+from app.exchange_clients import verify_credentials, fetch_account_snapshot
+from app.security import encrypt_secret, decrypt_secret, CredentialEncryptionUnavailable
 from app.market_data import market_data
 from app.paper_trading import _close_position
 
@@ -31,11 +30,16 @@ class InviteRequest(BaseModel):
     telegram_id: str = Field(min_length=4, max_length=32, pattern=r"^[0-9]+$")
 
 
+class PhantomUnlockRequest(BaseModel):
+    confirmation: str = Field(min_length=12, max_length=32)
+
+
 class ExchangeConnectRequest(BaseModel):
     exchange: str = Field(pattern=r"^(binance|bybit)$")
     environment: str = Field(default="mainnet", pattern=r"^(mainnet|testnet)$")
     api_key: str = Field(min_length=8, max_length=256)
     api_secret: str = Field(min_length=8, max_length=256)
+    confirm_read_only: bool = False
     confirm_withdrawals_disabled: bool = False
     label: str | None = Field(default=None, max_length=100)
 
@@ -85,6 +89,7 @@ def build_platform_router(require_user):
                 "role": row.role,
                 "ui_mode": row.ui_mode or "stealth",
                 "trading_mode": row.trading_mode or "paper",
+                "phantom_locked": bool(row.phantom_locked),
                 "exchange_connections": connections,
                 "is_owner": row.role == "owner",
                 "active_users": active_users if row.role == "owner" else None,
@@ -149,7 +154,7 @@ def build_platform_router(require_user):
             raise HTTPException(400, "Owner is already registered")
         db = SessionLocal()
         try:
-            actor = db.query(User).filter(User.telegram_id == owner_id).first()
+            actor = db.query(User).filter(User.telegram_id == owner_id).with_for_update().first()
             if actor is None or actor.role != "owner":
                 raise HTTPException(403, "Owner access required")
             existing = db.query(User).filter(User.telegram_id == payload.telegram_id).first()
@@ -207,6 +212,8 @@ def build_platform_router(require_user):
             if target is None or target.telegram_id == owner_id:
                 raise HTTPException(404, "User not found or cannot deactivate owner")
             target.is_active = False
+            target.phantom_locked = True
+            target.trading_mode = "paper"
             connections = db.query(ExchangeConnection).filter(
                 ExchangeConnection.owner_telegram_id == telegram_id
             ).all()
@@ -238,8 +245,13 @@ def build_platform_router(require_user):
                 "id": row.id, "exchange": row.exchange, "label": row.label,
                 "environment": row.environment, "status": row.connection_status,
                 "can_trade": row.can_trade,
-                "withdrawal_check": "manual_required" if row.exchange == "bybit" else "verified_disabled",
+                "withdrawal_check": (
+                    "verified_disabled" if row.withdrawal_access_detected is False
+                    else "manual_required" if row.withdrawal_access_detected is None
+                    else "access_detected"
+                ),
                 "emergency_lock": bool(row.emergency_lock),
+                "account_snapshot_available": row.connection_status == "connected" and not row.emergency_lock,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
             } for row in rows], "live_trading_enabled": bool(settings.live_trading_enabled)}
@@ -249,10 +261,26 @@ def build_platform_router(require_user):
     @router.post("/exchanges/connect", status_code=201)
     async def connect_exchange(payload: ExchangeConnectRequest, user=Depends(require_user)):
         owner_id = user_id_from_claims(user)
+        check_db = SessionLocal()
+        try:
+            account = check_db.query(User).filter(
+                User.telegram_id == owner_id, User.is_active.is_(True)
+            ).first()
+            if account is None:
+                raise HTTPException(403, "MIRAGE account is inactive")
+            if account.phantom_locked:
+                raise HTTPException(423, "PROTOCOL PHANTOM is active. Unlock MIRAGE before reconnecting an exchange.")
+        finally:
+            check_db.close()
         if not payload.confirm_withdrawals_disabled:
             raise HTTPException(
                 400,
                 "Confirm that withdrawal permissions are disabled in the exchange API-key settings before connecting.",
+            )
+        if not payload.confirm_read_only:
+            raise HTTPException(
+                400,
+                "Confirm that the API key has read-only permissions and no trading permissions before connecting.",
             )
         try:
             result = await verify_credentials(
@@ -275,6 +303,13 @@ def build_platform_router(require_user):
 
         db = SessionLocal()
         try:
+            account = db.query(User).filter(
+                User.telegram_id == owner_id, User.is_active.is_(True)
+            ).with_for_update().first()
+            if account is None:
+                raise HTTPException(403, "MIRAGE account is inactive")
+            if account.phantom_locked:
+                raise HTTPException(423, "PROTOCOL PHANTOM was activated during connection verification. Unlock MIRAGE before reconnecting.")
             row = db.query(ExchangeConnection).filter(
                 ExchangeConnection.owner_telegram_id == owner_id,
                 ExchangeConnection.exchange == payload.exchange,
@@ -289,7 +324,7 @@ def build_platform_router(require_user):
                     api_secret_encrypted=encrypted_secret,
                     label=payload.label,
                     connection_status="connected",
-                    can_trade=bool(result.get("can_trade")),
+                    can_trade=result.get("can_trade"),
                     withdrawal_access_detected=result.get("withdrawal_access_detected"),
                     emergency_lock=False,
                     last_checked_at=datetime.now(timezone.utc),
@@ -301,7 +336,7 @@ def build_platform_router(require_user):
                 row.api_secret_encrypted = encrypted_secret
                 row.label = payload.label or row.label
                 row.connection_status = "connected"
-                row.can_trade = bool(result.get("can_trade"))
+                row.can_trade = result.get("can_trade")
                 row.withdrawal_access_detected = result.get("withdrawal_access_detected")
                 row.emergency_lock = False
                 row.last_checked_at = datetime.now(timezone.utc)
@@ -316,13 +351,51 @@ def build_platform_router(require_user):
                 "exchange": row.exchange, "environment": row.environment,
                 "withdrawal_check": result.get("withdrawal_check"),
                 "message": (
-                    "Connection verified. Bybit withdrawal permission must be checked manually in the Bybit API-key settings."
+                    "Connection verified. Manually verify that Bybit trading and withdrawal permissions are disabled in the API-key settings."
                     if payload.exchange == "bybit" else
-                    "Connection verified. Binance reports withdrawal access disabled."
+                    "Connection verified. Binance reports withdrawals disabled; manually verify the key has no trading permission."
                 ),
             }
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(409, "This exchange connection changed during verification. Refresh and retry.") from exc
         finally:
             db.close()
+
+    @router.get("/exchanges/{connection_id}/account")
+    async def exchange_account(connection_id: int, user=Depends(require_user)):
+        owner_id = user_id_from_claims(user)
+        db = SessionLocal()
+        try:
+            row = _owned_connection(db, owner_id, connection_id)
+            account = db.query(User).filter(User.telegram_id == owner_id).first()
+            if account is None or not account.is_active or account.phantom_locked:
+                raise HTTPException(423, "PROTOCOL PHANTOM is active or the MIRAGE account is inactive")
+            if row.connection_status != "connected" or row.emergency_lock:
+                raise HTTPException(423, "Exchange connection is locked or disconnected")
+            exchange = row.exchange
+            environment = row.environment
+            encrypted_key = row.api_key_encrypted
+            encrypted_secret = row.api_secret_encrypted
+        finally:
+            db.close()
+        try:
+            api_key = decrypt_secret(encrypted_key)
+            api_secret = decrypt_secret(encrypted_secret)
+            snapshot = await fetch_account_snapshot(exchange, environment, api_key, api_secret)
+            return {"status": "ok", "snapshot": snapshot}
+        except CredentialEncryptionUnavailable as exc:
+            raise HTTPException(503, "Exchange credentials cannot be decrypted. Check EXCHANGE_ENCRYPTION_KEY.") from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except httpx.HTTPError as exc:
+            logger.warning("Exchange account snapshot failed (%s): %s", exchange, type(exc).__name__)
+            raise HTTPException(502, "Exchange account data is temporarily unavailable") from exc
+        except ValueError as exc:
+            raise HTTPException(502, "Exchange returned an invalid account response") from exc
+        except Exception as exc:
+            logger.exception("Unexpected exchange account snapshot error")
+            raise HTTPException(502, "Could not load exchange account data") from exc
 
     @router.delete("/exchanges/{connection_id}")
     async def disconnect_exchange(connection_id: int, user=Depends(require_user)):
@@ -386,8 +459,10 @@ def build_platform_router(require_user):
                 ExchangeConnection.owner_telegram_id == owner_id,
                 ExchangeConnection.connection_status == "connected",
             ).count()
+            account = db.query(User).filter(User.telegram_id == owner_id).first()
             return {
                 "live_trading_enabled": False,
+                "phantom_locked": bool(account.phantom_locked) if account else True,
                 "connected_exchanges": connections,
                 "trading_mode": "paper",
                 "order_execution": "disabled",
@@ -398,30 +473,69 @@ def build_platform_router(require_user):
 
     @router.post("/phantom/lock")
     async def phantom_lock(user=Depends(require_user)):
-        """Fail-safe lock: stop future MIRAGE activity without falsely claiming positions closed."""
+        """Persistently block MIRAGE exchange actions; no unsupported live actions are claimed."""
         owner_id = user_id_from_claims(user)
         db = SessionLocal()
         try:
+            user_row = db.query(User).filter(
+                User.telegram_id == owner_id, User.is_active.is_(True)
+            ).with_for_update().first()
+            if user_row is None:
+                raise HTTPException(403, "MIRAGE account is inactive")
+            user_row.phantom_locked = True
+            user_row.trading_mode = "paper"
             rows = db.query(ExchangeConnection).filter(
                 ExchangeConnection.owner_telegram_id == owner_id,
                 ExchangeConnection.connection_status == "connected",
             ).all()
             for row in rows:
                 row.emergency_lock = True
+                row.connection_status = "locked"
                 _audit(db, owner_id, row.id, "PHANTOM_LOCK", "LOCKED", {
-                    "note": "Order execution is disabled in this release; no exchange positions were closed or API keys revoked."
+                    "note": "Persistent user lock applied. Live order execution is disabled in this release; no exchange positions were closed and no exchange API keys were revoked."
                 })
-            user_row = db.query(User).filter(User.telegram_id == owner_id).first()
-            if user_row:
-                user_row.trading_mode = "paper"
             db.commit()
             return {
                 "status": "locked",
+                "phantom_locked": True,
                 "connections_locked": len(rows),
                 "positions_closed": 0,
+                "orders_cancelled": 0,
                 "keys_revoked": False,
-                "message": "MIRAGE live mode is locked. No exchange positions were closed. Check and close any manually opened exchange positions directly in the exchange app, then revoke the API key there if needed.",
+                "message": "PROTOCOL PHANTOM is active. MIRAGE exchange connections are locked and cannot be reconnected until you explicitly unlock the account. This release does not place live orders, cancel exchange orders, close exchange positions, or revoke keys. Check any exchange activity directly in the exchange app.",
             }
+        except HTTPException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    @router.post("/phantom/unlock")
+    async def phantom_unlock(payload: PhantomUnlockRequest, user=Depends(require_user)):
+        owner_id = user_id_from_claims(user)
+        if payload.confirmation != "UNLOCK MIRAGE":
+            raise HTTPException(400, "Type UNLOCK MIRAGE to confirm")
+        db = SessionLocal()
+        try:
+            user_row = db.query(User).filter(
+                User.telegram_id == owner_id, User.is_active.is_(True)
+            ).with_for_update().first()
+            if user_row is None:
+                raise HTTPException(403, "MIRAGE account is inactive")
+            user_row.phantom_locked = False
+            user_row.trading_mode = "paper"
+            _audit(db, owner_id, None, "PHANTOM_UNLOCK", "UNLOCKED", {
+                "note": "User explicitly unlocked MIRAGE. Previously locked exchange connections still require a fresh credential verification/reconnect."
+            })
+            db.commit()
+            return {
+                "status": "unlocked",
+                "phantom_locked": False,
+                "message": "MIRAGE is unlocked. Previously locked exchange connections remain locked; reconnect and verify them again if needed.",
+            }
+        except HTTPException:
+            db.rollback()
+            raise
         finally:
             db.close()
 
