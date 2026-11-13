@@ -16,7 +16,8 @@
   <link rel="stylesheet" href="premium-dashboard.css">
   <link rel="stylesheet" href="mirage-dual-worlds.css">
   <link rel="stylesheet" href="mirage-refinement.css">
-  <link id="mirage-release-css" rel="stylesheet" href="mirage-release.css?v=20261113-main1">
+  <link id="mirage-release-css" rel="stylesheet" href="mirage-release.css?v=20261113-repair1">
+  <link rel="stylesheet" href="mirage-navigation.css?v=20261113-repair1">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -38,6 +39,10 @@
     </button>
     <div class="top-actions">
       <span class="connection"><i></i><span id="connection-label">ПОДКЛЮЧЕНИЕ</span></span>
+      <button class="phantom-quick-btn" id="mirage-phantom-quick" type="button" disabled aria-label="PROTOCOL PHANTOM" title="PROTOCOL PHANTOM — аварийная блокировка">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2c-4.2 0-7.2 3.1-7.2 7.4v8.2c0 .9 1 1.4 1.7.8l2.1-1.8 1.4 1.5c.6.6 1.6.6 2.2 0l1.4-1.5 2.1 1.8c.7.6 1.7.1 1.7-.8v-8.2c0-4.3-3-7.4-7.4-7.4Z"/><path d="M9 10h.01M15 10h.01M9.2 14.2c1.8 1.2 3.8 1.2 5.6 0"/></svg>
+        <span>PHANTOM</span>
+      </button>
       <button class="icon-btn" id="refresh-btn" aria-label="Обновить" title="Обновить">↻</button>
     </div>
   </header>
@@ -52,6 +57,10 @@
         <div class="hero-metrics"><div><span>Начальный капитал</span><b id="dashboard-initial">$10,000.00</b></div><div><span>Equity</span><b id="dashboard-equity">$10,000.00</b></div><div><span>Счета стратегий</span><b id="dashboard-accounts">4</b></div></div>
         <div class="hero-watermark">M</div>
       </article>
+      <div class="section-title"><div><span class="eyebrow">OPEN POSITIONS</span><h2>Открытые позиции</h2></div><button class="text-btn" type="button" data-page="portfolio">Весь портфель <span>↗</span></button></div>
+      <div id="dashboard-open-positions" class="dashboard-snapshot-list"><div class="loading-state">Загружаем открытые позиции…</div></div>
+      <div class="section-title"><div><span class="eyebrow">LATEST ACTIVITY</span><h2>Последние сделки</h2></div><button class="text-btn" type="button" data-page="portfolio" data-profile-scroll="history-list">История <span>↗</span></button></div>
+      <div id="dashboard-recent-activity" class="dashboard-snapshot-list"><div class="loading-state">Загружаем последние сделки…</div></div>
       <div class="section-title"><div><span class="eyebrow">MARKET WATCH</span><h2>Рынок сейчас</h2></div><button class="text-btn" data-page="markets">Все рынки <span>↗</span></button></div>
       <div class="market-preview" id="dashboard-markets"><div class="loading-state">Загружаем котировки Binance…</div></div>
       <div class="section-title"><div><span class="eyebrow">SYSTEM STATUS</span><h2>Система</h2></div></div>
@@ -102,12 +111,13 @@
 <script src="dashboard-polish.js"></script>
 <script src="intelligence-panel.js"></script>
 <script src="robustness-panel.js"></script>
-<script src="mirage-dual-worlds.js?v=20261113-main1"></script>
-<script src="mirage-refinement.js?v=20261113-main1"></script>
-<script src="app.js?v=20261113-main1"></script>
-<script src="signal-intelligence.js?v=20261113-main1"></script>
-<script src="mirage-mobile-first.js?v=20261113-main1"></script>
-<script src="mirage-release.js?v=20261113-main1"></script>
-<script src="mirage-luxe.js?v=20261113-main1"></script>
+<script src="mirage-dual-worlds.js?v=20261113-repair1"></script>
+<script src="mirage-refinement.js?v=20261113-repair1"></script>
+<script src="app.js?v=20261113-repair1"></script>
+<script src="signal-intelligence.js?v=20261113-repair1"></script>
+<script src="mirage-mobile-first.js?v=20261113-repair1"></script>
+<script src="mirage-release.js?v=20261113-repair1"></script>
+<script src="mirage-luxe.js?v=20261113-repair1"></script>
+<script src="mirage-navigation.js?v=20261113-repair1"></script>
 </body>
 </html>

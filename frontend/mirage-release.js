@@ -48,7 +48,7 @@
       link = document.createElement("link");
       link.id = "mirage-release-css";
       link.rel = "stylesheet";
-      link.href = "mirage-release.css?v=20261113-main1";
+      link.href = "mirage-release.css?v=20261113-repair1";
     }
     document.head.appendChild(link);
   }
@@ -118,6 +118,13 @@
     if (unlockButton) unlockButton.hidden = !data.phantom_locked;
     const phantomCard = $("#mirage-phantom-card");
     if (phantomCard) phantomCard.dataset.locked = data.phantom_locked ? "true" : "false";
+    const quick = $("#mirage-phantom-quick");
+    if (quick) {
+      quick.disabled = false;
+      quick.dataset.locked = data.phantom_locked ? "true" : "false";
+      quick.title = data.phantom_locked ? "PROTOCOL PHANTOM активен — снять блокировку" : "PROTOCOL PHANTOM — аварийная блокировка";
+      quick.setAttribute("aria-label", quick.title);
+    }
     if (data.ui_mode && window.MIRAGE_MODES?.setImmediate) {
       state.applyingServerMode = true;
       window.MIRAGE_MODES.setImmediate(data.ui_mode);
@@ -288,6 +295,12 @@
     $("#mirage-invite-form")?.addEventListener("submit", inviteUser);
     $("#mp-phantom")?.addEventListener("click", doPhantom);
     $("#mp-phantom-unlock")?.addEventListener("click", unlockPhantom);
+    $("#mirage-phantom-quick")?.addEventListener("click", () => {
+      const locked = state.profile?.phantom_locked ?? Boolean($("#mp-phantom")?.hidden);
+      const target = locked ? $("#mp-phantom-unlock") : $("#mp-phantom");
+      if (target) target.click();
+      else toast("Открой MIRAGE внутри Telegram и повтори действие после загрузки профиля.");
+    });
     document.addEventListener("click", event => {
       const account = event.target.closest("[data-exchange-account]");
       if (account) loadExchangeAccount(Number(account.dataset.exchangeAccount));

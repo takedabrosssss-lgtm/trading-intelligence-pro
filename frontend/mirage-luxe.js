@@ -14,7 +14,7 @@
     const link = document.createElement("link");
     link.id = CSS_ID;
     link.rel = "stylesheet";
-    link.href = "mirage-ui-repair.css?v=20261113-main1";
+    link.href = "mirage-ui-repair.css?v=20261113-repair1";
     document.head.appendChild(link);
   }
 

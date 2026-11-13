@@ -64,7 +64,7 @@
       link = document.createElement("link");
       link.id = "mirage-mobile-first-css";
       link.rel = "stylesheet";
-      link.href = "mirage-mobile-first.css?v=20261113-main1";
+      link.href = "mirage-mobile-first.css?v=20261113-repair1";
     }
     document.head.appendChild(link);
   }
@@ -93,7 +93,7 @@
     block.innerHTML = `
       <article class="mobile-return-card"><div><span>ОБЩАЯ ДОХОДНОСТЬ PAPER TRADING</span><b id="analytics-return">—</b><small id="analytics-net-pnl">Реализованный P&amp;L: —</small></div><div class="mobile-return-orbit">↗</div></article>
       <div class="mobile-analytics-stats" id="analytics-statistics"><div class="mobile-analytics-stat"><small>Сделки</small><b>—</b></div><div class="mobile-analytics-stat"><small>Win Rate</small><b>—</b></div><div class="mobile-analytics-stat"><small>Просадка</small><b>—</b></div></div>
-      <section class="mobile-allocation"><div class="mobile-section-heading"><div><span class="eyebrow">ACCOUNT MIX</span><h2>Распределение капитала</h2></div></div><div id="analytics-allocation" class="mobile-allocation-list"><div class="mobile-empty-state">Загружаем статистику счетов…</div></div></section>`;
+      <section class="mobile-allocation"><div class="mobile-section-heading"><div><span class="eyebrow">ACCOUNT MIX</span><h2>Распределение капитала</h2></div><button type="button" class="mobile-text-link" data-page="portfolio">Открыть портфель ${ICONS.arrow}</button></div><div id="analytics-allocation" class="mobile-allocation-list"><div class="mobile-empty-state">Загружаем статистику счетов…</div></div></section>`;
     intro.insertAdjacentElement("afterend", block);
   }
 
@@ -132,7 +132,7 @@
         <button class="profile-menu-row" type="button" data-profile-action="about"><span class="profile-menu-icon">ⓘ</span><span><b>О приложении</b><small>Версия, режим работы и ограничения</small></span><i>›</i></button>
       </section>
       <div class="profile-extra" id="profile-settings" hidden><div class="profile-extra-head"><b>Настройки отображения</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><label class="profile-setting-row"><span><b>Уменьшить анимации</b><small>Для более плавной работы на слабых устройствах</small></span><input id="profile-reduced-motion" type="checkbox"></label><p class="mobile-footnote">Режим STEALTH / SPECTRE влияет только на оформление. Расчёты и функции остаются активными.</p></div>
-      <div class="profile-extra" id="profile-notifications" hidden><div class="profile-extra-head"><b>Уведомления Telegram</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><p>Торговые уведомления отправляются MIRAGE-ботом. Чтобы получать их, открой чат с ботом в Telegram и выполни команду /start. Отдельного переключателя здесь нет: приложение не показывает ложный статус уведомлений.</p></div>
+      <div class="profile-extra" id="profile-notifications" hidden><div class="profile-extra-head"><b>Уведомления Telegram</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><p>Автоматическая рассылка торговых сигналов временно отключена защитным переключателем после инцидента с массовыми уведомлениями. Telegram-бот и Mini App продолжают работать; старые сигналы не будут отправляться повторно.</p></div>
       <div class="profile-extra" id="profile-about" hidden><div class="profile-extra-head"><b>О MIRAGE</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><div class="profile-about-logo">MIRAGE</div><p>Trading Intelligence PRO</p><div class="profile-safe-label">PAPER TRADING ONLY</div><p class="mobile-footnote">Только симуляция сделок. Реальные биржевые ордера отключены. Рыночные данные и аналитика не являются гарантией результата.</p></div>
       <div class="profile-security-note"><span>◆</span><div><b>Paper Trading only</b><small>Реальные сделки и биржевые ордера отключены.</small></div></div>`;
     const portfolio = $("#portfolio");
@@ -310,45 +310,60 @@
 
 
   let analyticsLoadedAt = 0;
+  let analyticsLoading = false;
   async function loadAnalytics(force = false) {
     const host = $("#analytics-allocation");
-    if (!host) return;
+    if (!host || analyticsLoading) return;
     if (!force && Date.now() - analyticsLoadedAt < 30000) return;
-    host.innerHTML = `<div class="mobile-empty-state">Собираем показатели Paper Trading…</div>`;
-    const results = await Promise.allSettled([
-      getJSON("/api/mirage/command-center"),
-      getJSON("/api/portfolio")
-    ]);
-    const command = results[0].status === "fulfilled" ? results[0].value : null;
-    const portfolio = results[1].status === "fulfilled" ? results[1].value : null;
-    if (!command || !portfolio) {
-      host.innerHTML = `<div class="mobile-empty-state">Не удалось загрузить аналитику. Проверь соединение и открой раздел ещё раз.</div>`;
-      return;
+    analyticsLoading = true;
+    host.innerHTML = `<div class="mobile-empty-state">Загружаем распределение четырёх Paper Trading счетов…</div>`;
+    try {
+      // Portfolio is the source of truth for total equity/return and must render
+      // even if the richer command-center analytics endpoint is unavailable.
+      const portfolioResult = await Promise.allSettled([getJSON("/api/portfolio")]);
+      const portfolio = portfolioResult[0].status === "fulfilled" ? portfolioResult[0].value : null;
+      if (!portfolio || typeof portfolio !== "object") {
+        throw portfolioResult[0].reason || new Error("Портфель временно недоступен");
+      }
+      const initial = Number(portfolio.initial_capital || 0);
+      const totalPnl = Number(portfolio.total_pnl || 0);
+      const ret = initial > 0 ? totalPnl / initial * 100 : 0;
+      const returnNode = $("#analytics-return");
+      const pnlNode = $("#analytics-net-pnl");
+      if (returnNode) {
+        returnNode.textContent = `${ret >= 0 ? "+" : ""}${ret.toFixed(2)}%`;
+        returnNode.className = ret >= 0 ? "positive" : "negative";
+      }
+      if (pnlNode) pnlNode.textContent = `Общий P&L: ${totalPnl >= 0 ? "+" : ""}${money(totalPnl)} · Equity ${money(portfolio.equity)}`;
+
+      const accounts = Array.isArray(portfolio.accounts) ? portfolio.accounts : [];
+      const total = accounts.reduce((sum, account) => sum + Math.max(0, Number(account.equity || 0)), 0);
+      host.innerHTML = accounts.length ? accounts.map(account => {
+        const equity = Number(account.equity || 0);
+        const share = total > 0 ? Math.max(0, equity) / total * 100 : 0;
+        const pnl = Number(account.total_pnl || 0);
+        return `<div class="mobile-allocation-row"><div class="mobile-allocation-head"><b>${esc(account.name)}</b><strong>${money(equity)}</strong></div><div class="mobile-allocation-track"><i style="width:${Math.min(100, share).toFixed(1)}%"></i></div><small>${share.toFixed(1)}% капитала · ${Number(account.open_positions || 0)} позиций · P&L ${pnl >= 0 ? "+" : ""}${money(pnl)}</small></div>`;
+      }).join("") : `<div class="mobile-empty-state">Счета не найдены. Проверь привязку Telegram-пользователя к Paper Trading.</div>`;
+
+      // Enrich statistics separately; a failure here must not hide portfolio data.
+      const commandResult = await Promise.allSettled([getJSON("/api/mirage/command-center")]);
+      const command = commandResult[0].status === "fulfilled" ? commandResult[0].value : null;
+      const p = command?.portfolio || {};
+      const t = command?.trading || {};
+      const stats = $("#analytics-statistics");
+      if (stats) stats.innerHTML = [
+        ["Закрытые сделки", command ? Number(t.closed_trades || 0).toLocaleString("ru-RU") : "—"],
+        ["Win Rate", t.win_rate_pct == null ? "—" : `${Number(t.win_rate_pct).toFixed(1)}%`],
+        ["Текущая просадка", p.current_drawdown_pct == null ? "—" : `${Number(p.current_drawdown_pct).toFixed(2)}%`]
+      ].map(([label, value]) => `<div class="mobile-analytics-stat"><small>${label}</small><b>${esc(value)}</b></div>`).join("");
+      analyticsLoadedAt = Date.now();
+    } catch (error) {
+      host.innerHTML = `<div class="mobile-empty-state">${esc(error.message || "Не удалось загрузить счета")}</div>`;
+      const returnNode = $("#analytics-return");
+      if (returnNode) returnNode.textContent = "—";
+    } finally {
+      analyticsLoading = false;
     }
-    analyticsLoadedAt = Date.now();
-    const p = command.portfolio || {};
-    const t = command.trading || {};
-    const ret = Number(p.return_pct);
-    const returnNode = $("#analytics-return");
-    const pnlNode = $("#analytics-net-pnl");
-    if (returnNode) {
-      returnNode.textContent = Number.isFinite(ret) ? `${ret >= 0 ? "+" : ""}${ret.toFixed(2)}%` : "—";
-      returnNode.className = ret >= 0 ? "positive" : "negative";
-    }
-    if (pnlNode) pnlNode.textContent = `Реализованный P&L: ${money(p.net_realized_pnl)}`;
-    const stats = $("#analytics-statistics");
-    if (stats) stats.innerHTML = [
-      ["Закрытые сделки", Number(t.closed_trades || 0).toLocaleString("ru-RU")],
-      ["Win Rate", t.win_rate_pct == null ? "—" : `${Number(t.win_rate_pct).toFixed(1)}%`],
-      ["Текущая просадка", p.current_drawdown_pct == null ? "—" : `${Number(p.current_drawdown_pct).toFixed(2)}%`]
-    ].map(([label, value]) => `<div class="mobile-analytics-stat"><small>${label}</small><b>${esc(value)}</b></div>`).join("");
-    const accounts = Array.isArray(portfolio.accounts) ? portfolio.accounts : [];
-    const total = accounts.reduce((sum, account) => sum + Math.max(0, Number(account.equity || 0)), 0);
-    host.innerHTML = accounts.length ? accounts.map(account => {
-      const equity = Number(account.equity || 0);
-      const share = total > 0 ? Math.max(0, equity) / total * 100 : 0;
-      return `<div class="mobile-allocation-row"><div class="mobile-allocation-head"><b>${esc(account.name)}</b><strong>${money(equity)}</strong></div><div class="mobile-allocation-track"><i style="width:${Math.min(100, share).toFixed(1)}%"></i></div><small>${share.toFixed(1)}% капитала · ${Number(account.open_positions || 0)} позиций</small></div>`;
-    }).join("") : `<div class="mobile-empty-state">Нет данных по счетам.</div>`;
   }
 
   function setupProfileActions() {

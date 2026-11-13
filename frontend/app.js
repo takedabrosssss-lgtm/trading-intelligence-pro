@@ -703,6 +703,42 @@
 
   /* PORTFOLIO */
 
+  function renderDashboardPositions(positions) {
+    const host = $("#dashboard-open-positions");
+    if (!host) return;
+    const rows = Array.isArray(positions) ? positions.slice(0, 3) : [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="empty-message">Сейчас нет открытых Paper Trading позиций</div>`;
+      return;
+    }
+    host.innerHTML = rows.map(position => {
+      const pnl = Number(position.unrealized_pnl || 0);
+      const cls = pnl >= 0 ? "positive" : "negative";
+      return `<button class="dashboard-snapshot-row" type="button" data-page="portfolio">
+        <span class="dashboard-snapshot-main"><b>${safe(coin(position.symbol))}/USDT</b><small>${safe(position.account || position.strategy || "Paper Trading")} · ${position.direction === "BUY" ? "LONG" : "SHORT"}</small></span>
+        <strong class="${cls}">${pnl >= 0 ? "+" : ""}${money(pnl)}</strong><i>›</i>
+      </button>`;
+    }).join("");
+  }
+
+  function renderDashboardHistory(trades) {
+    const host = $("#dashboard-recent-activity");
+    if (!host) return;
+    const rows = Array.isArray(trades) ? trades.slice(0, 3) : [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="empty-message">Закрытых сделок пока нет</div>`;
+      return;
+    }
+    host.innerHTML = rows.map(trade => {
+      const pnl = Number(trade.net_pnl || 0);
+      const cls = pnl >= 0 ? "positive" : "negative";
+      return `<button class="dashboard-snapshot-row" type="button" data-page="portfolio" data-profile-scroll="history-list">
+        <span class="dashboard-snapshot-main"><b>${safe(coin(trade.symbol))}/USDT</b><small>${safe(trade.strategy || "Paper Trading")} · ${safe(trade.exit_reason || "Закрыта")}</small></span>
+        <strong class="${cls}">${pnl >= 0 ? "+" : ""}${money(pnl)}</strong><i>›</i>
+      </button>`;
+    }).join("");
+  }
+
   function renderPositions(positions) {
     const host = $("#positions-list");
     if (!host) return;
@@ -928,6 +964,8 @@
       ["Начальный капитал", money(p.initial_capital)],
       ["Доступный баланс", money(p.balance)],
       ["Equity", money(p.equity)],
+      ["Общий P&L", `${Number(p.total_pnl) >= 0 ? "+" : ""}${money(p.total_pnl)}`],
+      ["Общая доходность", `${Number(p.initial_capital) > 0 ? ((Number(p.total_pnl || 0) / Number(p.initial_capital)) * 100).toFixed(2) : "0.00"}%`],
       ["Нереализованный P&L", money(p.unrealized_pnl)]
     ];
 
@@ -1028,17 +1066,20 @@
 
     renderPortfolioStats(p);
     renderPositions(p.positions || []);
+    renderDashboardPositions(p.positions || []);
     renderAccounts(p.accounts || []);
 
     // History failure is isolated from the portfolio.
     if (historyResult.status === "fulfilled") {
       renderHistory(historyResult.value.trades || []);
+      renderDashboardHistory(historyResult.value.trades || []);
     } else {
       showError(
         $("#history-list"),
         historyResult.reason?.message ||
         "Не удалось загрузить историю сделок"
       );
+      showError($("#dashboard-recent-activity"), "История сделок временно недоступна");
     }
   }
 

@@ -271,3 +271,10 @@ body[data-mirage-mode="spectre"] .mirage41-link-index,
 html[data-mirage-mode="spectre"] .mirage41-link-index {
   color: #b89aff;
   }
+
+
+@media (max-width: 520px) {
+  .mirage41-nav { margin: 0 0 10px !important; border-radius: 0 0 14px 14px !important; }
+  .mirage41-nav-head { flex-wrap: wrap; gap: 8px !important; }
+  .mirage41-search-wrap { width: 100%; }
+}

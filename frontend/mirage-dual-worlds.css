@@ -2,18 +2,18 @@
    Presentation layer only. Does not alter trading, API, or persistence logic. */
 
 :root {
-  color-scheme: dark;
-  --mw-bg: #050b08;
-  --mw-bg-2: #07120d;
-  --mw-panel: #0b1711;
-  --mw-panel-2: #102119;
-  --mw-line: rgba(100, 220, 165, .16);
-  --mw-text: #effaf3;
-  --mw-muted: #82968a;
-  --mw-accent: #53e6a5;
-  --mw-accent-2: #a6ffd1;
-  --mw-accent-soft: rgba(83,230,165,.12);
-  --mw-danger: #ff6576;
+  color-scheme: light;
+  --mw-bg: #f4f7f8;
+  --mw-bg-2: #ffffff;
+  --mw-panel: #ffffff;
+  --mw-panel-2: #f7f9fa;
+  --mw-line: #e3e9ec;
+  --mw-text: #23313a;
+  --mw-muted: #71808a;
+  --mw-accent: #2e8278;
+  --mw-accent-2: #236e65;
+  --mw-accent-soft: rgba(46,130,120,.10);
+  --mw-danger: #c84d5a;
   --mw-radius: 20px;
   --mw-shadow: 0 18px 55px rgba(0,0,0,.32);
 }
@@ -29,22 +29,20 @@ html, body {
 }
 
 body[data-mirage-mode="stealth"] {
-  --mw-bg: #040b08;
-  --mw-bg-2: #07140d;
-  --mw-panel: #0b1711;
-  --mw-panel-2: #102219;
-  --mw-line: rgba(91, 218, 157, .15);
-  --mw-text: #edf9f1;
-  --mw-muted: #84988c;
-  --mw-accent: #4be2a0;
-  --mw-accent-2: #b0ffda;
-  --mw-accent-soft: rgba(75,226,160,.11);
-  --mw-radius: 21px;
-  --mw-shadow: 0 18px 48px rgba(0,0,0,.30);
-  background:
-    radial-gradient(ellipse at 52% -18%, rgba(28,133,82,.20), transparent 45%),
-    radial-gradient(ellipse at 100% 46%, rgba(18,93,61,.10), transparent 36%),
-    #040b08 !important;
+  color-scheme: light;
+  --mw-bg: #f4f7f8;
+  --mw-bg-2: #ffffff;
+  --mw-panel: #ffffff;
+  --mw-panel-2: #f7f9fa;
+  --mw-line: #e3e9ec;
+  --mw-text: #23313a;
+  --mw-muted: #71808a;
+  --mw-accent: #2e8278;
+  --mw-accent-2: #236e65;
+  --mw-accent-soft: rgba(46,130,120,.10);
+  --mw-radius: 18px;
+  --mw-shadow: 0 8px 24px rgba(25,48,57,.06);
+  background: #f4f7f8 !important;
 }
 
 /* ------------------------------ */
@@ -52,6 +50,7 @@ body[data-mirage-mode="stealth"] {
 /* ------------------------------ */
 
 body[data-mirage-mode="spectre"] {
+  color-scheme: dark;
   --mw-bg: #070510;
   --mw-bg-2: #0b0817;
   --mw-panel: #110d1e;
