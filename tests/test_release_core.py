@@ -1062,7 +1062,14 @@ def test_signal_delivery_retries_pending_recipients_after_paper_open_without_sta
 
     fake_bot=FakeBot("test-token")
     monkeypatch.setattr(worker, "SessionLocal", factory)
-    monkeypatch.setattr(worker, "settings", SimpleNamespace(bot_token="test-token"))
+    from datetime import timedelta
+    monkeypatch.setattr(worker, "settings", SimpleNamespace(
+        bot_token="test-token",
+        signal_notifications_enabled=True,
+        signal_notifications_start_after=datetime.now(timezone.utc) - timedelta(days=1),
+        signal_notifications_max_signals_per_cycle=1,
+        signal_notifications_delay_seconds=1.0,
+    ))
     monkeypatch.setattr(worker, "Bot", lambda token: fake_bot)
     monkeypatch.setattr(worker, "is_quality_signal_values", lambda *args: True)
     delivered=asyncio.run(worker.deliver_pending_signals())
@@ -1161,3 +1168,106 @@ def test_signal_delivery_skips_fully_delivered_and_exhausted_signals(monkeypatch
     monkeypatch.setattr(worker, "Bot", lambda token: FakeBot())
     monkeypatch.setattr(worker, "is_quality_signal_values", lambda *args: True)
     assert asyncio.run(worker.deliver_pending_signals()) == 0
+
+
+def test_telegram_signal_delivery_fails_closed_when_notifications_disabled(monkeypatch):
+    from app import worker
+
+    monkeypatch.setattr(worker, "settings", SimpleNamespace(
+        bot_token="test-token",
+        signal_notifications_enabled=False,
+        signal_notifications_start_after=None,
+    ))
+    monkeypatch.setattr(worker, "SessionLocal", lambda: pytest.fail("DB must not be queried when notifications are off"))
+    assert asyncio.run(worker.deliver_pending_signals()) == 0
+
+
+def test_telegram_queue_only_accepts_new_signals_after_explicit_cutoff(monkeypatch):
+    from datetime import timedelta
+    from app import worker
+    from app.database import SignalDelivery
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        db.add(User(telegram_id="22222", role="user", is_active=False, ui_mode="stealth", trading_mode="paper"))
+        db.commit()
+        cutoff = datetime(2026, 11, 13, 19, 0, tzinfo=timezone.utc)
+        monkeypatch.setattr(worker, "settings", SimpleNamespace(
+            bot_token="test-token",
+            signal_notifications_enabled=True,
+            signal_notifications_start_after=cutoff,
+        ))
+
+        old_signal = Signal(
+            symbol="BTCUSDT", timeframe="15m", direction="BUY", grade="A",
+            score=90, status="new", created_at=cutoff - timedelta(minutes=5),
+        )
+        db.add(old_signal)
+        db.flush()
+        assert worker.enqueue_signal_deliveries(db, old_signal) == 0
+
+        new_signal = Signal(
+            symbol="ETHUSDT", timeframe="1h", direction="BUY", grade="A",
+            score=90, status="new", created_at=cutoff + timedelta(seconds=1),
+        )
+        db.add(new_signal)
+        db.flush()
+        assert worker.enqueue_signal_deliveries(db, new_signal) == 1
+        db.commit()
+
+        queued = db.query(SignalDelivery).filter(SignalDelivery.signal_id == new_signal.id).all()
+        assert len(queued) == 1
+        assert queued[0].telegram_id == "11111"
+        assert queued[0].status == "pending"
+        assert db.query(SignalDelivery).filter(SignalDelivery.signal_id == old_signal.id).count() == 0
+    finally:
+        db.close()
+
+
+def test_telegram_notifications_require_both_enable_flag_and_cutoff(monkeypatch):
+    from app import worker
+
+    monkeypatch.setattr(worker, "settings", SimpleNamespace(
+        bot_token="test-token",
+        signal_notifications_enabled=True,
+        signal_notifications_start_after=None,
+    ))
+    assert worker.notifications_are_armed() is False
+
+
+def test_portfolio_api_returns_aggregate_equity_pnl_and_open_positions(monkeypatch):
+    from app import main
+
+    _, factory = make_db()
+    seed_user(factory, "11111", "owner")
+    db = factory()
+    try:
+        account = db.query(PaperAccount).filter(
+            PaperAccount.owner_telegram_id == "11111",
+            PaperAccount.strategy == "scalping",
+        ).one()
+        account.balance = 2510.0
+        db.add(Position(
+            account_id=account.id, symbol="BTCUSDT", direction="BUY",
+            entry_price=100.0, current_price=105.0, stop_loss=95.0,
+            take_profit=110.0, quantity=1.0, unrealized_pnl=5.0, status="open",
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(main, "SessionLocal", factory)
+    main.app.dependency_overrides[main.require_user] = lambda: {"id": "11111"}
+    try:
+        response = TestClient(main.app).get("/api/portfolio")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["initial_capital"] == pytest.approx(10000.0)
+        assert body["equity"] == pytest.approx(10015.0)
+        assert body["total_pnl"] == pytest.approx(15.0)
+        assert len(body["accounts"]) == 4
+        assert len(body["positions"]) == 1
+    finally:
+        main.app.dependency_overrides.pop(main.require_user, None)
