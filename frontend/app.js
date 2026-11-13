@@ -1094,7 +1094,6 @@
   /* EVENTS */
 
   function bindEvents() {
-        let pageActivationTimer = null;
     document.addEventListener("click", event => {
       const marketButton =
         event.target.closest("[data-select-symbol]");
@@ -1129,25 +1128,51 @@
         loadChart();
         return;
       }
-      const pageButton =
-        event.target.closest("[data-page]");
+      const pageButton = event.target.closest("[data-page]");
 
       if (pageButton) {
-        clearTimeout(pageActivationTimer);
+        const requestedPage = pageButton.dataset.page;
+        const targetPage = document.getElementById(requestedPage);
 
-        pageActivationTimer = setTimeout(() => {
-          const activePage =
-            document.querySelector("main .page.active")?.id;
+        // A navigation click must activate the requested page, not merely
+        // re-activate whichever page was already active.
+        if (targetPage && targetPage.classList.contains("page")) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
 
-          if (activePage) {
-            activatePage(activePage);
+          $$("main .page").forEach(page => {
+            page.classList.toggle("active", page === targetPage);
+          });
+
+          const selectedNav = ["strategies", "portfolio"].includes(requestedPage)
+            ? "profile"
+            : requestedPage;
+
+          $$(".bottom-nav [data-page]").forEach(button => {
+            const active = button.dataset.page === selectedNav;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-current", active ? "page" : "false");
+          });
+
+          document.dispatchEvent(new CustomEvent("mirage:pagechange", {
+            detail: { page: requestedPage }
+          }));
+
+          activatePage(requestedPage);
+
+          const scrollTarget = pageButton.dataset.profileScroll;
+          if (scrollTarget) {
+            requestAnimationFrame(() => {
+              document.getElementById(scrollTarget)?.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+              });
+            });
           }
-
-          pageActivationTimer = null;
-        }, 100);
+        }
       }
-      
-    });
+
+    }, true);
 
     $("#run-analysis")?.addEventListener(
       "click",
