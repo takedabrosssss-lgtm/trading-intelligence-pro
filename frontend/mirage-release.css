@@ -1,0 +1,456 @@
+/* MIRAGE release design layer: STEALTH light / SPECTRE deep black.
+   Loaded after the legacy presentation CSS so mode palettes are deterministic. */
+:root {
+  --mirage-radius: 18px;
+  --mirage-accent: #2e8278;
+  --mirage-accent-strong: #236d65;
+  --mirage-success: #16845e;
+  --mirage-danger: #c84d5a;
+}
+
+/* STEALTH MODE — clean, bright, low-noise. */
+html[data-mirage-mode="stealth"], body[data-mirage-mode="stealth"] {
+  color-scheme: light !important;
+  --mw-bg: #f4f7f8;
+  --mw-bg-2: #ffffff;
+  --mw-panel: #ffffff;
+  --mw-panel-2: #f7f9fa;
+  --mw-line: #e5ebee;
+  --mw-text: #1f2b33;
+  --mw-muted: #71808a;
+  --mw-accent: #2e8278;
+  --mw-accent-2: #276f67;
+  --mw-accent-soft: rgba(46,130,120,.10);
+  --mw-danger: #c84d5a;
+  --mf-bg: #f4f7f8;
+  --mf-panel: #ffffff;
+  --mf-panel-2: #f7f9fa;
+  --mf-line: #e5ebee;
+  --mf-text: #1f2b33;
+  --mf-muted: #71808a;
+  --mf-accent: #2e8278;
+  --mf-accent-2: #55a79c;
+  --mf-negative: #c84d5a;
+  background: #f4f7f8 !important;
+  color: #1f2b33 !important;
+}
+body[data-mirage-mode="stealth"] {
+  background: #f4f7f8 !important;
+  color: #1f2b33 !important;
+}
+body[data-mirage-mode="stealth"] .app-shell,
+body[data-mirage-mode="stealth"] main,
+body[data-mirage-mode="stealth"] .page {
+  background: transparent !important;
+  color: #1f2b33 !important;
+}
+body[data-mirage-mode="stealth"] .topbar {
+  background: rgba(255,255,255,.96) !important;
+  border-bottom: 1px solid #e6ecef !important;
+  box-shadow: 0 2px 12px rgba(23,43,52,.035) !important;
+}
+body[data-mirage-mode="stealth"] .brand-copy b,
+body[data-mirage-mode="stealth"] .page-intro h1,
+body[data-mirage-mode="stealth"] .section-title h2,
+body[data-mirage-mode="stealth"] .mobile-page-head h1,
+body[data-mirage-mode="stealth"] .profile-section-heading h2 {
+  color: #1c2b32 !important;
+  text-shadow: none !important;
+}
+body[data-mirage-mode="stealth"] .brand-copy small,
+body[data-mirage-mode="stealth"] .subtle,
+body[data-mirage-mode="stealth"] .eyebrow,
+body[data-mirage-mode="stealth"] .overline,
+body[data-mirage-mode="stealth"] .mobile-page-head p {
+  color: #77868e !important;
+}
+body[data-mirage-mode="stealth"] .hero-card,
+body[data-mirage-mode="stealth"] .premium-kpi,
+body[data-mirage-mode="stealth"] #premium-equity,
+body[data-mirage-mode="stealth"] #premium-positions,
+body[data-mirage-mode="stealth"] #premium-activity,
+body[data-mirage-mode="stealth"] .strategy-card,
+body[data-mirage-mode="stealth"] .strategy-summary,
+body[data-mirage-mode="stealth"] .portfolio-total,
+body[data-mirage-mode="stealth"] .chart-panel,
+body[data-mirage-mode="stealth"] .analysis-card,
+body[data-mirage-mode="stealth"] .analysis-placeholder,
+body[data-mirage-mode="stealth"] .position-card,
+body[data-mirage-mode="stealth"] .account-row,
+body[data-mirage-mode="stealth"] .history-row,
+body[data-mirage-mode="stealth"] .status-card,
+body[data-mirage-mode="stealth"] .mini-market,
+body[data-mirage-mode="stealth"] .market-row,
+body[data-mirage-mode="stealth"] .stat-box,
+body[data-mirage-mode="stealth"] .signal-selector,
+body[data-mirage-mode="stealth"] .mi-panel,
+body[data-mirage-mode="stealth"] .m4-panel,
+body[data-mirage-mode="stealth"] .mobile-return-card,
+body[data-mirage-mode="stealth"] .mobile-signal-card,
+body[data-mirage-mode="stealth"] .mobile-news-card,
+body[data-mirage-mode="stealth"] .mobile-allocation,
+body[data-mirage-mode="stealth"] .profile-identity-card,
+body[data-mirage-mode="stealth"] .profile-mode-card,
+body[data-mirage-mode="stealth"] .profile-menu-card,
+body[data-mirage-mode="stealth"] .profile-extra,
+body[data-mirage-mode="stealth"] .profile-security-note,
+body[data-mirage-mode="stealth"] .mirage-platform-card {
+  color: #23313a !important;
+  border: 1px solid #e3e9ec !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  background-image: none !important;
+  box-shadow: 0 6px 22px rgba(25,48,57,.045) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body[data-mirage-mode="stealth"] .hero-card {
+  background: linear-gradient(135deg,#ffffff 0%,#f2f8f7 100%) !important;
+  border-color: #dbe8e5 !important;
+  min-height: 210px !important;
+}
+body[data-mirage-mode="stealth"] .hero-balance,
+body[data-mirage-mode="stealth"] .strategy-summary b,
+body[data-mirage-mode="stealth"] .portfolio-total b,
+body[data-mirage-mode="stealth"] .premium-kpi strong {
+  color: #1e3437 !important;
+  text-shadow: none !important;
+}
+body[data-mirage-mode="stealth"] .hero-pnl,
+body[data-mirage-mode="stealth"] .positive,
+body[data-mirage-mode="stealth"] .m4-positive {
+  color: #16845e !important;
+}
+body[data-mirage-mode="stealth"] .negative,
+body[data-mirage-mode="stealth"] .m4-negative {
+  color: #c84d5a !important;
+}
+body[data-mirage-mode="stealth"] .status-card small,
+body[data-mirage-mode="stealth"] .strategy-card small,
+body[data-mirage-mode="stealth"] .position-grid span,
+body[data-mirage-mode="stealth"] .m4-muted,
+body[data-mirage-mode="stealth"] .mi-panel .mi-sub,
+body[data-mirage-mode="stealth"] .mi-panel .mi-foot,
+body[data-mirage-mode="stealth"] .mobile-news-copy p,
+body[data-mirage-mode="stealth"] .mobile-news-meta,
+body[data-mirage-mode="stealth"] .mobile-news-foot {
+  color: #71808a !important;
+}
+body[data-mirage-mode="stealth"] .position-grid b,
+body[data-mirage-mode="stealth"] .mobile-signal-card,
+body[data-mirage-mode="stealth"] .mobile-signal-card b,
+body[data-mirage-mode="stealth"] .mobile-news-copy > b,
+body[data-mirage-mode="stealth"] .m4-panel h3,
+body[data-mirage-mode="stealth"] .mi-panel h3 {
+  color: #22313a !important;
+}
+body[data-mirage-mode="stealth"] .signal-selector select,
+body[data-mirage-mode="stealth"] .mi-panel .mi-controls select,
+body[data-mirage-mode="stealth"] .m4-controls input,
+body[data-mirage-mode="stealth"] .m4-controls select,
+body[data-mirage-mode="stealth"] .mirage-platform-card input,
+body[data-mirage-mode="stealth"] .mirage-platform-card select {
+  background: #f7f9fa !important;
+  color: #24333b !important;
+  border: 1px solid #dce5e8 !important;
+}
+body[data-mirage-mode="stealth"] .analysis-metrics div,
+body[data-mirage-mode="stealth"] .m4-metric,
+body[data-mirage-mode="stealth"] .m4-row,
+body[data-mirage-mode="stealth"] .mi-panel .mi-stat,
+body[data-mirage-mode="stealth"] .mi-panel .mi-status,
+body[data-mirage-mode="stealth"] .mi-panel .mi-folds,
+body[data-mirage-mode="stealth"] .mi-panel .mi-table-wrap {
+  background: #f7f9fa !important;
+  color: #26353d !important;
+  border-color: #e2e9ec !important;
+}
+body[data-mirage-mode="stealth"] .bottom-nav {
+  background: rgba(255,255,255,.97) !important;
+  border: 1px solid #e1e8eb !important;
+  box-shadow: 0 6px 26px rgba(23,43,52,.10) !important;
+  backdrop-filter: blur(16px) !important;
+}
+body[data-mirage-mode="stealth"] .bottom-nav .nav-item {
+  color: #84929a !important;
+}
+body[data-mirage-mode="stealth"] .bottom-nav .nav-item.active {
+  color: #28796f !important;
+  background: #edf6f4 !important;
+  box-shadow: none !important;
+}
+body[data-mirage-mode="stealth"] .bottom-nav .nav-item.active small {
+  color: #28796f !important;
+}
+body[data-mirage-mode="stealth"] .mobile-news-thumb {
+  background: #e9f0f1 !important;
+}
+body[data-mirage-mode="stealth"] .mobile-chip,
+body[data-mirage-mode="stealth"] .m4-btn,
+body[data-mirage-mode="stealth"] .profile-menu-row {
+  color: #3a4a51 !important;
+}
+body[data-mirage-mode="stealth"] .mobile-chip.active,
+body[data-mirage-mode="stealth"] .m4-btn,
+body[data-mirage-mode="stealth"] .mirage-platform-primary {
+  background: #e8f3f1 !important;
+  color: #236e65 !important;
+  border-color: #cfe3df !important;
+  box-shadow: none !important;
+}
+body[data-mirage-mode="stealth"] .mirage-platform-danger {
+  background: #fff1f1 !important;
+  color: #b64250 !important;
+  border-color: #f0d5d8 !important;
+}
+body[data-mirage-mode="stealth"] .paper-tag,
+body[data-mirage-mode="stealth"] .live-pill {
+  background: #edf5f3 !important;
+  color: #32776d !important;
+  border-color: #d7e8e4 !important;
+}
+body[data-mirage-mode="stealth"] .mirage-mode-toolbar {
+  background: transparent !important;
+  border-color: #e2e9ec !important;
+}
+body[data-mirage-mode="stealth"] .mirage-mode-copy strong,
+body[data-mirage-mode="stealth"] .mirage-mode-option {
+  color: #32434a !important;
+}
+body[data-mirage-mode="stealth"] .mirage-mode-option.active {
+  background: #e6f2ef !important;
+  color: #236e65 !important;
+  border-color: #cfe2de !important;
+}
+body[data-mirage-mode="stealth"] .mobile-footnote,
+body[data-mirage-mode="stealth"] .disclaimer {
+  color: #788890 !important;
+}
+
+/* SPECTRE MODE — almost black, richer analysis hierarchy and higher information density. */
+html[data-mirage-mode="spectre"], body[data-mirage-mode="spectre"] {
+  color-scheme: dark !important;
+  --mw-bg: #07090c;
+  --mw-bg-2: #0b0f13;
+  --mw-panel: #10151a;
+  --mw-panel-2: #151c22;
+  --mw-line: rgba(155,173,185,.15);
+  --mw-text: #edf2f4;
+  --mw-muted: #84939b;
+  --mw-accent: #9d8de0;
+  --mw-accent-2: #b9adee;
+  --mw-accent-soft: rgba(157,141,224,.12);
+  --mf-bg: #07090c;
+  --mf-panel: #10151a;
+  --mf-panel-2: #151c22;
+  --mf-line: rgba(155,173,185,.15);
+  --mf-text: #edf2f4;
+  --mf-muted: #84939b;
+  --mf-accent: #9d8de0;
+  --mf-accent-2: #6fc3b8;
+  background: #07090c !important;
+  color: #edf2f4 !important;
+}
+body[data-mirage-mode="spectre"] {
+  background: #07090c !important;
+  color: #edf2f4 !important;
+}
+body[data-mirage-mode="spectre"] .app-shell,
+body[data-mirage-mode="spectre"] main,
+body[data-mirage-mode="spectre"] .page {
+  background: transparent !important;
+  color: #edf2f4 !important;
+}
+body[data-mirage-mode="spectre"] .topbar {
+  background: rgba(8,11,14,.97) !important;
+  border-color: #1d252b !important;
+}
+body[data-mirage-mode="spectre"] .hero-card,
+body[data-mirage-mode="spectre"] .premium-kpi,
+body[data-mirage-mode="spectre"] #premium-equity,
+body[data-mirage-mode="spectre"] #premium-positions,
+body[data-mirage-mode="spectre"] #premium-activity,
+body[data-mirage-mode="spectre"] .strategy-card,
+body[data-mirage-mode="spectre"] .strategy-summary,
+body[data-mirage-mode="spectre"] .portfolio-total,
+body[data-mirage-mode="spectre"] .chart-panel,
+body[data-mirage-mode="spectre"] .analysis-card,
+body[data-mirage-mode="spectre"] .analysis-placeholder,
+body[data-mirage-mode="spectre"] .position-card,
+body[data-mirage-mode="spectre"] .account-row,
+body[data-mirage-mode="spectre"] .history-row,
+body[data-mirage-mode="spectre"] .status-card,
+body[data-mirage-mode="spectre"] .mini-market,
+body[data-mirage-mode="spectre"] .market-row,
+body[data-mirage-mode="spectre"] .stat-box,
+body[data-mirage-mode="spectre"] .signal-selector,
+body[data-mirage-mode="spectre"] .mi-panel,
+body[data-mirage-mode="spectre"] .m4-panel,
+body[data-mirage-mode="spectre"] .mobile-return-card,
+body[data-mirage-mode="spectre"] .mobile-signal-card,
+body[data-mirage-mode="spectre"] .mobile-news-card,
+body[data-mirage-mode="spectre"] .mobile-allocation,
+body[data-mirage-mode="spectre"] .profile-identity-card,
+body[data-mirage-mode="spectre"] .profile-mode-card,
+body[data-mirage-mode="spectre"] .profile-menu-card,
+body[data-mirage-mode="spectre"] .profile-extra,
+body[data-mirage-mode="spectre"] .profile-security-note,
+body[data-mirage-mode="spectre"] .mirage-platform-card {
+  color: #eaf0f2 !important;
+  border: 1px solid #202a31 !important;
+  border-radius: 12px !important;
+  background: #10161b !important;
+  background-image: none !important;
+  box-shadow: 0 12px 34px rgba(0,0,0,.22) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body[data-mirage-mode="spectre"] .hero-card {
+  background: linear-gradient(132deg,#151d22 0%,#0c1115 72%) !important;
+  border-color: #29363e !important;
+}
+body[data-mirage-mode="spectre"] .hero-balance,
+body[data-mirage-mode="spectre"] .strategy-summary b,
+body[data-mirage-mode="spectre"] .portfolio-total b,
+body[data-mirage-mode="spectre"] .premium-kpi strong,
+body[data-mirage-mode="spectre"] .page-intro h1,
+body[data-mirage-mode="spectre"] .section-title h2,
+body[data-mirage-mode="spectre"] .m4-panel h3,
+body[data-mirage-mode="spectre"] .mi-panel h3 {
+  color: #f1f4f5 !important;
+  text-shadow: none !important;
+}
+body[data-mirage-mode="spectre"] .eyebrow,
+body[data-mirage-mode="spectre"] .overline,
+body[data-mirage-mode="spectre"] .mirage-mode-copy strong,
+body[data-mirage-mode="spectre"] .mirage-mode-option.active {
+  color: #b7a9ec !important;
+}
+body[data-mirage-mode="spectre"] .position-grid span,
+body[data-mirage-mode="spectre"] .status-card small,
+body[data-mirage-mode="spectre"] .m4-muted,
+body[data-mirage-mode="spectre"] .mobile-news-copy p,
+body[data-mirage-mode="spectre"] .mobile-news-meta,
+body[data-mirage-mode="spectre"] .mobile-news-foot {
+  color: #87959d !important;
+}
+body[data-mirage-mode="spectre"] .bottom-nav {
+  background: rgba(8,12,16,.97) !important;
+  border-color: #202a31 !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,.36) !important;
+}
+body[data-mirage-mode="spectre"] .bottom-nav .nav-item { color: #84919a !important; }
+body[data-mirage-mode="spectre"] .bottom-nav .nav-item.active {
+  color: #c4b8f0 !important;
+  background: rgba(157,141,224,.11) !important;
+}
+body[data-mirage-mode="spectre"] .bottom-nav .nav-item.active small { color: #c4b8f0 !important; }
+body[data-mirage-mode="spectre"] .analysis-metrics div,
+body[data-mirage-mode="spectre"] .m4-metric,
+body[data-mirage-mode="spectre"] .m4-row,
+body[data-mirage-mode="spectre"] .mi-panel .mi-stat,
+body[data-mirage-mode="spectre"] .mi-panel .mi-status,
+body[data-mirage-mode="spectre"] .mi-panel .mi-folds,
+body[data-mirage-mode="spectre"] .mi-panel .mi-table-wrap {
+  background: #0b1014 !important;
+  color: #e7edf0 !important;
+  border-color: #202a31 !important;
+}
+body[data-mirage-mode="spectre"] .signal-selector select,
+body[data-mirage-mode="spectre"] .mi-panel .mi-controls select,
+body[data-mirage-mode="spectre"] .m4-controls input,
+body[data-mirage-mode="spectre"] .m4-controls select,
+body[data-mirage-mode="spectre"] .mirage-platform-card input,
+body[data-mirage-mode="spectre"] .mirage-platform-card select {
+  background: #080d11 !important;
+  color: #e7edf0 !important;
+  border: 1px solid #27323a !important;
+}
+body[data-mirage-mode="spectre"] .m4-btn,
+body[data-mirage-mode="spectre"] .mirage-platform-primary {
+  background: rgba(157,141,224,.14) !important;
+  color: #c9bdf4 !important;
+  border-color: rgba(157,141,224,.32) !important;
+}
+body[data-mirage-mode="spectre"] .mirage-platform-danger {
+  background: rgba(200,77,90,.12) !important;
+  color: #ff9aa3 !important;
+  border-color: rgba(200,77,90,.26) !important;
+}
+body[data-mirage-mode="spectre"] .mobile-news-thumb { background: #131c22 !important; }
+body[data-mirage-mode="spectre"] .mirage-mode-toolbar { border-color: #202a31 !important; }
+
+/* Shared release components */
+.mirage-close-paper-position,
+.mirage-platform-card button,
+.mirage-platform-card .button-like {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--mw-line, #dce5e8);
+  padding: 10px 13px;
+  font: 650 12px/1.2 "DM Sans", sans-serif;
+}
+.mirage-close-paper-position {
+  width: 100%; margin-top: 12px;
+  color: #a93e4a; background: #fff3f3; border-color: #f0d7d9;
+}
+.mirage-platform-card { margin: 12px 0; padding: 16px; min-width: 0; }
+.mirage-platform-card h2 { margin: 0 0 8px; font: 750 16px Manrope, sans-serif; }
+.mirage-platform-card p { margin: 6px 0; font-size: 11px; line-height: 1.55; opacity: .78; }
+.mirage-platform-card .mp-field { display: grid; gap: 6px; margin: 10px 0; }
+.mirage-platform-card .mp-field label { font-size: 10px; opacity: .72; font-weight: 650; }
+.mirage-platform-card input, .mirage-platform-card select {
+  width: 100%; min-width: 0; box-sizing: border-box; border-radius: 10px;
+  padding: 11px 12px; font-size: 12px;
+}
+.mirage-platform-card button { cursor: pointer; }
+.mirage-platform-card button:disabled { opacity: .45; cursor: not-allowed; }
+.mirage-platform-primary { background: #e8f3f1; color: #236e65; border-color: #cfe3df; }
+.mirage-platform-danger { background: #fff1f1; color: #b64250; border-color: #f0d5d8; }
+.mirage-platform-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-top: 1px solid var(--mw-line, #e4eaed); }
+.mirage-platform-row > div { min-width: 0; }
+.mirage-platform-row b { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.mirage-platform-row small { display: block; font-size: 10px; opacity: .68; margin-top: 3px; }
+.mirage-platform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.mirage-platform-note { border-radius: 11px; padding: 10px 11px; background: rgba(130,150,160,.08); font-size: 10px; line-height: 1.5; margin: 10px 0; }
+.mirage-platform-status { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 5px 8px; font-size: 9px; background: rgba(46,130,120,.1); color: #328176; }
+.mirage-platform-status:before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mirage-platform-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.mirage-platform-hidden { display: none !important; }
+.mirage-platform-error { color: #bd4551 !important; }
+.mirage-platform-success { color: #16845e !important; }
+
+@media (max-width: 390px) {
+  .mirage-platform-card { padding: 13px; }
+  .mirage-platform-grid { grid-template-columns: 1fr; }
+  .mirage-close-paper-position { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mirage-platform-card *, .mirage-close-paper-position { transition: none !important; animation: none !important; }
+}
+
+.mirage-withdrawal-confirm {
+  display: flex; align-items: flex-start; gap: 9px; margin: 12px 0;
+  padding: 11px; border: 1px solid var(--mw-line, #dce5e8); border-radius: 11px;
+  font-size: 10px; line-height: 1.5;
+}
+.mirage-withdrawal-confirm input { flex: 0 0 18px; width: 18px; height: 18px; margin: 1px 0 0; accent-color: #2e8278; }
+body[data-mirage-mode="stealth"] .m4-table th { color: #71808a !important; }
+body[data-mirage-mode="stealth"] .m4-table td { color: #26353d !important; border-color: #e2e9ec !important; }
+body[data-mirage-mode="spectre"] .m4-table th { color: #99a6af !important; }
+body[data-mirage-mode="spectre"] .m4-table td { color: #e7edf0 !important; border-color: #26323a !important; }
+
+/* Exchange account snapshot and persistent PROTOCOL PHANTOM state. */
+.mirage-platform-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+.mirage-platform-actions button { min-height: 36px; padding: 8px 11px; }
+.mirage-platform-account { width: 100%; min-width: 0; margin-top: 8px; font-size: 11px; overflow-wrap: anywhere; }
+.mirage-platform-assets { display: grid; gap: 5px; margin: 9px 0; }
+.mirage-platform-assets > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; border-top: 1px solid var(--mw-line, rgba(120,140,160,.2)); }
+.mirage-platform-assets > div b { flex: 0 0 auto; }
+.mirage-platform-assets > div span { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#mirage-phantom-card[data-locked="true"] { border-color: rgba(205, 70, 86, .55) !important; }
+#mirage-phantom-card button[hidden] { display: none !important; }
+@media (max-width: 420px) {
+  .mirage-platform-actions { display: grid; grid-template-columns: 1fr; }
+  .mirage-platform-actions button { width: 100%; }
+}

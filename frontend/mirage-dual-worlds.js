@@ -83,7 +83,7 @@
     $$(".mirage-page-sigil").forEach(el => { el.innerHTML = svg[mode]; });
 
     const metaTheme = $('meta[name="theme-color"]');
-    if (metaTheme) metaTheme.content = isSpectre ? "#070510" : "#040b08";
+    if (metaTheme) metaTheme.content = isSpectre ? "#070a12" : "#f4f7f8";
   }
 
   function setMode(next, animate = true) {

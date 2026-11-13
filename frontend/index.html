@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-mirage-mode="stealth">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-  <meta name="theme-color" content="#030807">
+  <meta name="theme-color" content="#f4f7f8">
   <meta name="description" content="MIRAGE — See beyond the market">
   <meta name="application-name" content="MIRAGE">
   <title>MIRAGE</title>
@@ -16,11 +16,20 @@
   <link rel="stylesheet" href="premium-dashboard.css">
   <link rel="stylesheet" href="mirage-dual-worlds.css">
   <link rel="stylesheet" href="mirage-refinement.css">
-  <link rel="stylesheet" href="mirage-navigation.css">
+  <link id="mirage-release-css" rel="stylesheet" href="mirage-release.css?v=20261113-main1">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-<body>
+<body data-mirage-mode="stealth">
+<script>
+  // Apply the saved visual mode before the first screen is painted.
+  try {
+    const savedMode = localStorage.getItem("mirage-mode-v3") || localStorage.getItem("mirage-mode-v1");
+    const initialMode = savedMode === "spectre" ? "spectre" : "stealth";
+    document.documentElement.dataset.mirageMode = initialMode;
+    document.body.dataset.mirageMode = initialMode;
+  } catch (_) {}
+</script>
 <div class="app-shell">
   <header class="topbar">
     <button class="brand" data-page="dashboard" aria-label="MIRAGE — на главную">
@@ -82,26 +91,23 @@
     </section>
   </main>
   <nav class="bottom-nav" aria-label="Основная навигация">
-    <button class="nav-item active" data-page="dashboard"><span>⌂</span><small>Обзор</small></button>
-    <button class="nav-item" data-page="markets"><span>◈</span><small>Рынки</small></button>
-    <button class="nav-item" data-page="signals"><span>⌁</span><small>Сигналы</small></button>
-    <button class="nav-item" data-page="strategies"><span>▥</span><small>Стратегии</small></button>
-    <button class="nav-item" data-page="portfolio"><span>▣</span><small>Портфель</small></button>
+    <button class="nav-item active" data-page="dashboard"><span>⌂</span><small>Главная</small></button>
+    <button class="nav-item" data-page="signals"><span>⌁</span><small>Торговля</small></button>
+    <button class="nav-item" data-page="markets"><span>◈</span><small>Аналитика</small></button>
+    <button class="nav-item" data-page="news"><span>▤</span><small>Новости</small></button>
+    <button class="nav-item" data-page="profile"><span>◎</span><small>Профиль</small></button>
   </nav>
   <div id="toast" class="toast" role="status"></div>
 </div>
-<script src="obsidian.js"></script>
-<script src="obsidian-fix.js"></script>
 <script src="dashboard-polish.js"></script>
-<script src="premium-dashboard.js"></script>
-<script src="mirage-brand-nav.js"></script>
 <script src="intelligence-panel.js"></script>
 <script src="robustness-panel.js"></script>
-<script src="mirage-dual-worlds.js"></script>
-<script src="mirage-refinement.js"></script>
-<script src="app.js"></script>
-<script src="mirage-navigation.js"></script>
-<script src="signal-intelligence.js"></script>
-<script src="mirage-mobile-first.js"></script>
+<script src="mirage-dual-worlds.js?v=20261113-main1"></script>
+<script src="mirage-refinement.js?v=20261113-main1"></script>
+<script src="app.js?v=20261113-main1"></script>
+<script src="signal-intelligence.js?v=20261113-main1"></script>
+<script src="mirage-mobile-first.js?v=20261113-main1"></script>
+<script src="mirage-release.js?v=20261113-main1"></script>
+<script src="mirage-luxe.js?v=20261113-main1"></script>
 </body>
 </html>

@@ -9,7 +9,7 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const NAV = [
     ["dashboard", "Главная", "home"],
-    ["signals", "Сигналы", "pulse"],
+    ["signals", "Торговля", "pulse"],
     ["markets", "Аналитика", "chart"],
     ["news", "Новости", "news"],
     ["profile", "Профиль", "user"]
@@ -64,7 +64,7 @@
       link = document.createElement("link");
       link.id = "mirage-mobile-first-css";
       link.rel = "stylesheet";
-      link.href = "mirage-mobile-first.css?v=3";
+      link.href = "mirage-mobile-first.css?v=20261113-main1";
     }
     document.head.appendChild(link);
   }
@@ -132,7 +132,7 @@
         <button class="profile-menu-row" type="button" data-profile-action="about"><span class="profile-menu-icon">ⓘ</span><span><b>О приложении</b><small>Версия, режим работы и ограничения</small></span><i>›</i></button>
       </section>
       <div class="profile-extra" id="profile-settings" hidden><div class="profile-extra-head"><b>Настройки отображения</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><label class="profile-setting-row"><span><b>Уменьшить анимации</b><small>Для более плавной работы на слабых устройствах</small></span><input id="profile-reduced-motion" type="checkbox"></label><p class="mobile-footnote">Режим STEALTH / SPECTRE влияет только на оформление. Расчёты и функции остаются активными.</p></div>
-      <div class="profile-extra" id="profile-notifications" hidden><div class="profile-extra-head"><b>Уведомления Telegram</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><p>Торговые уведомления отправляются существующим Telegram-ботом. Здесь нет отдельного переключателя, который мог бы создать ложное впечатление о включении уведомлений.</p><a class="profile-telegram-link" href="https://t.me/tradingintelligenceprobot" target="_blank" rel="noopener">Открыть Telegram-бота ${ICONS.arrow}</a></div>
+      <div class="profile-extra" id="profile-notifications" hidden><div class="profile-extra-head"><b>Уведомления Telegram</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><p>Торговые уведомления отправляются MIRAGE-ботом. Чтобы получать их, открой чат с ботом в Telegram и выполни команду /start. Отдельного переключателя здесь нет: приложение не показывает ложный статус уведомлений.</p></div>
       <div class="profile-extra" id="profile-about" hidden><div class="profile-extra-head"><b>О MIRAGE</b><button type="button" class="profile-extra-close" data-profile-close>×</button></div><div class="profile-about-logo">MIRAGE</div><p>Trading Intelligence PRO</p><div class="profile-safe-label">PAPER TRADING ONLY</div><p class="mobile-footnote">Только симуляция сделок. Реальные биржевые ордера отключены. Рыночные данные и аналитика не являются гарантией результата.</p></div>
       <div class="profile-security-note"><span>◆</span><div><b>Paper Trading only</b><small>Реальные сделки и биржевые ордера отключены.</small></div></div>`;
     const portfolio = $("#portfolio");
