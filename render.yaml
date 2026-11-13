@@ -1,7 +1,7 @@
-
+# STAGING TEMPLATE ONLY. Keep production service/database untouched.
 services:
   - type: web
-    name: trading-intelligence-web
+    name: mirage-staging-web
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -9,23 +9,34 @@ services:
     healthCheckPath: /health
     envVars:
       - key: ENVIRONMENT
-        value: production
+        value: staging
       - key: DATABASE_URL
         fromDatabase:
-          name: trading-intelligence-db
+          name: mirage-staging-db
           property: connectionString
       - key: BOT_TOKEN
         sync: false
       - key: OWNER_TELEGRAM_ID
         sync: false
+      - key: ALLOWED_TELEGRAM_IDS
+        sync: false
+      - key: MAX_USERS
+        value: "4"
       - key: MINI_APP_URL
-        value: https://trading-intelligence-web.onrender.com
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: EXCHANGE_ENCRYPTION_KEY
+        sync: false
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
 
 databases:
-  - name: trading-intelligence-db
+  - name: mirage-staging-db
     plan: free
-    databaseName: trading_intelligence
-    user: trading_intelligence
-    
+    databaseName: mirage_staging
+    user: mirage_staging

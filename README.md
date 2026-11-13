@@ -63,3 +63,31 @@ Create a Redis database in Upstash and copy its TLS connection string to `REDIS_
 Before live use, add automated unit/integration tests, migrations (Alembic), rate limiting, Telegram user subscriptions/consent, admin authorization for sensitive commands, robust news provider, alert retries/outbox, Redis caching, candle freshness checks, provider failover, and broker-specific spread/commission models. The initial `/admin` command is intentionally omitted rather than exposing unsafe unimplemented controls.
 
 Paper mode only. No exchange order placement exists.
+
+
+## MIRAGE multi-user / exchange-connection release (staging)
+
+This package adds Telegram-ID user provisioning, owner invitations, account-scoped Paper Trading views, exchange credential verification/storage, manual Paper close, persistent STEALTH/SPECTRE preferences, and the safe-lock action called **Протокол Фантом**.
+
+**Live order placement is intentionally not implemented or enabled in this release.** Binance/Bybit keys are verified with read-only account endpoints and stored encrypted. No order, cancellation, or withdrawal API is called. Bybit withdrawal permissions cannot be reliably inferred by the read-only verification in this release; the UI therefore requires a manual check in the Bybit API-key settings.
+
+Set `OWNER_TELEGRAM_ID`, `MAX_USERS=4`, and a separate `EXCHANGE_ENCRYPTION_KEY` on the staging service. The legacy Paper accounts are assigned to `OWNER_TELEGRAM_ID` by the idempotent migration; do not run this release against production before testing with a database backup. New invitees receive four independent Paper accounts ($2,500 each).
+
+Generate an encryption key locally with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Keep that key stable and private. Losing it makes stored exchange credentials undecryptable. Do not commit it to Git.
+
+
+## MIRAGE 4.3 staging package
+
+This repository snapshot is a **staging-only** release candidate. The `render.yaml` file is intentionally configured with separate `mirage-staging-web` and `mirage-staging-db` resources. Do not point it at the production database or production Telegram bot.
+
+The release adds per-Telegram-user Paper Trading accounts, invited-user access, Exchange Center credential verification and encrypted local storage, Paper manual close, and the **Протокол Фантом** lock. It also establishes the light STEALTH / dark SPECTRE visual layer and removes the conflicting legacy navigation scripts from the active HTML entry point. The existing news aggregator and Strategy Lab remain in place.
+
+**Live order execution is not in this release.** The UI and backend reject a request to switch to Live, no order-placement/cancellation methods are implemented, and no exchange orders are sent. Use the Exchange Center for read-only verification only. Bybit withdrawal permissions require manual confirmation in the exchange key settings.
+
+Follow `INSTALL_RU.md` before deploying this snapshot. The existing database migration assigns all legacy Paper accounts to `OWNER_TELEGRAM_ID`; create a backup and test on a newly provisioned staging database.
