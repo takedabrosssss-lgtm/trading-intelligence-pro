@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import (
-    AppSetting, PaperAccount, Position, Trade, User, SessionLocal, init_db,
+    PaperAccount, Position, Trade, SessionLocal, init_db,
 )
 from app.instance_lock import acquire_advisory_lock, release_advisory_lock
 from app.market_data import market_data
@@ -25,6 +25,9 @@ from app.robustness_api import build_robustness_router
 from app.mirage4_api import build_mirage4_router
 from app.signal_intelligence_api import build_signal_intelligence_router
 from app.news_api import build_news_router
+from app.platform_api import build_platform_router
+from app.migrations import prepare_legacy_schema
+from app.access import ensure_user_records, user_id_from_claims, user_account_ids
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-intelligence")
@@ -58,8 +61,12 @@ def validate_telegram_init_data(init_data: str) -> dict:
             raise ValueError("Invalid signature")
         user_data = json.loads(parsed.get("user", "{}"))
         user_id = str(user_data.get("id", ""))
-        if not user_id or user_id not in settings.allowed_user_ids:
+        if not user_id:
             raise HTTPException(403, "Access denied")
+        try:
+            ensure_user_records(user_data)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         return user_data
     except HTTPException:
         raise
@@ -102,26 +109,14 @@ async def run_bot_supervisor():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    prepare_legacy_schema()
     init_db()
-    db = SessionLocal()
-    try:
-        # Create only missing accounts. Existing balances and account rows are never reset.
-        for name in ("Scalping", "Intraday", "Swing", "Position"):
-            account = db.query(PaperAccount).filter(PaperAccount.name == name).first()
-            if not account:
-                db.add(PaperAccount(
-                    name=name, strategy=name.lower(), balance=2500.0,
-                    initial_balance=2500.0,
-                ))
-        db.commit()
-    finally:
-        db.close()
 
     worker_task = asyncio.create_task(run_worker(), name="market-signal-scanner")
     bot_task = asyncio.create_task(run_bot_supervisor(), name="telegram-bot-polling")
     app.state.worker_task = worker_task
     app.state.bot_task = bot_task
-    logger.info("MIRAGE 4.2 started")
+    logger.info("MIRAGE 4.3.1 main release started")
     logger.info("Background scanner and Telegram bot tasks scheduled")
     try:
         yield
@@ -132,15 +127,16 @@ async def lifespan(app: FastAPI):
         logger.info("MIRAGE stopped")
 
 
-app = FastAPI(title="MIRAGE", version="4.2.0", lifespan=lifespan)
+app = FastAPI(title="MIRAGE", version="4.3.1", lifespan=lifespan)
 app.include_router(build_router(require_user))
 app.include_router(build_robustness_router(require_user))
 app.include_router(build_mirage4_router(require_user, app, APP_STARTED_AT))
 app.include_router(build_signal_intelligence_router(require_user))
 app.include_router(build_news_router(require_user))
+app.include_router(build_platform_router(require_user))
 
 
-@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/health", methods=["GET", "HEAD"], include_in_schema=False)
 async def health():
     worker = getattr(app.state, "worker_task", None)
     worker_running = bool(worker and not worker.done())
@@ -148,6 +144,7 @@ async def health():
         "status": "ok" if worker_running else "degraded",
         "service": "MIRAGE",
         "paper_trading_only": True,
+        "live_execution": False,
         "scanner_task": "running" if worker_running else "not_running",
     }
 
@@ -213,9 +210,13 @@ async def analysis(
 
 @app.get("/api/portfolio")
 async def portfolio(user=__import__("fastapi").Depends(require_user)):
+    owner_id = user_id_from_claims(user)
     db = SessionLocal()
     try:
-        accounts = db.query(PaperAccount).order_by(PaperAccount.id.asc()).all()
+        accounts = db.query(PaperAccount).filter(
+            PaperAccount.owner_telegram_id == owner_id
+        ).order_by(PaperAccount.id.asc()).all()
+        account_ids = [a.id for a in accounts]
         account_data, all_positions = [], []
         total_balance = total_initial = total_equity = 0.0
         for account in accounts:
@@ -230,7 +231,11 @@ async def portfolio(user=__import__("fastapi").Depends(require_user)):
             equity = balance + unrealized
             account_pnl = equity - float(account.initial_balance or 0)
             account_data.append({
-                "name": account.name, "strategy": account.strategy,
+                "name": {
+                    "scalping": "Scalping", "intraday": "Intraday",
+                    "swing": "Swing", "position": "Position",
+                }.get(account.strategy, account.strategy.title()),
+                "strategy": account.strategy,
                 "balance": round(balance, 2), "equity": round(equity, 2),
                 "unrealized_pnl": round(unrealized, 2),
                 "total_pnl": round(account_pnl, 2),
@@ -238,7 +243,10 @@ async def portfolio(user=__import__("fastapi").Depends(require_user)):
             })
             for position in positions:
                 all_positions.append({
-                    "id": position.id, "account": account.name,
+                    "id": position.id, "account": {
+                        "scalping": "Scalping", "intraday": "Intraday",
+                        "swing": "Swing", "position": "Position",
+                    }.get(account.strategy, account.strategy.title()),
                     "strategy": account.strategy, "symbol": position.symbol,
                     "direction": position.direction,
                     "entry_price": float(position.entry_price or 0),
@@ -270,9 +278,12 @@ async def history(
     limit: int = Query(default=50, ge=1, le=200),
     user=__import__("fastapi").Depends(require_user),
 ):
+    owner_id = user_id_from_claims(user)
     db = SessionLocal()
     try:
-        trades = db.query(Trade).order_by(Trade.id.desc()).limit(limit).all()
+        account_ids = user_account_ids(db, owner_id)
+        trades = (db.query(Trade).filter(Trade.account_id.in_(account_ids))
+                  .order_by(Trade.id.desc()).limit(limit).all()) if account_ids else []
         return {"trades": [{
             "symbol": trade.symbol, "direction": trade.direction,
             "strategy": trade.strategy, "net_pnl": trade.net_pnl,

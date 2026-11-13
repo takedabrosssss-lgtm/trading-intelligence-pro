@@ -1,7 +1,8 @@
 import logging
+from sqlalchemy import and_
 from datetime import datetime, timedelta, timezone
 from app.config import settings
-from app.database import PaperAccount, Position, SessionLocal, Signal, Trade
+from app.database import PaperAccount, Position, SessionLocal, Signal, Trade, User
 from app.market_data import market_data
 from app.signals import is_quality_signal_values
 from app.risk_engine import assess_position
@@ -43,7 +44,7 @@ async def update_open_positions():
         ids=[row[0] for row in db.query(Position.id).filter(Position.status=="open").all()]
         for position_id in ids:
             try:
-                position=db.query(Position).filter(Position.id==position_id,Position.status=="open").first()
+                position=db.query(Position).filter(Position.id==position_id,Position.status=="open").with_for_update().first()
                 if position is None: continue
                 quote=await market_data.get_price(position.symbol); price=float(quote["price"])
                 if price<=0: continue
@@ -76,51 +77,98 @@ async def update_open_positions():
 async def open_paper_positions():
     db=SessionLocal(); opened=0
     try:
-        signal_ids=[row[0] for row in db.query(Signal.id).filter(Signal.status.in_(["new","sent"])).order_by(Signal.id.asc()).limit(100).all()]
+        fresh_ids = [row[0] for row in db.query(Signal.id).filter(
+            Signal.status.in_(["new", "sent"])
+        ).order_by(Signal.id.asc()).limit(100).all()]
+        # A shared signal may open for some users while another user's account is
+        # temporarily blocked by risk/position limits. Retry only the missing
+        # user-account deliveries; existing positions prevent duplicate entries.
+        retry_ids = [row[0] for row in db.query(Signal.id)
+            .join(PaperAccount, PaperAccount.strategy == Signal.strategy)
+            .join(User, User.telegram_id == PaperAccount.owner_telegram_id)
+            .outerjoin(Position, and_(
+                Position.signal_id == Signal.id,
+                Position.account_id == PaperAccount.id,
+            ))
+            .filter(
+                Signal.status == "paper_opened",
+                PaperAccount.is_active.is_(True),
+                User.is_active.is_(True),
+                Position.id.is_(None),
+            )
+            .distinct().order_by(Signal.id.asc()).limit(100).all()]
+        signal_ids = sorted(set(fresh_ids + retry_ids))[:100]
         for signal_id in signal_ids:
             try:
                 signal=db.query(Signal).filter(Signal.id==signal_id).first()
-                if signal is None or signal.status not in {"new","sent"}: continue
+                if signal is None or signal.status not in {"new", "sent", "paper_opened"}: continue
                 if not is_quality_signal_values(signal.direction,signal.score,signal.grade):
                     signal.status="paper_skipped"; db.commit(); continue
-                existing=db.query(Position).filter(Position.signal_id==signal.id).first()
-                if existing:
-                    signal.status="paper_opened" if existing.status=="open" else "paper_closed"; db.commit(); continue
                 created=_as_utc(signal.created_at)
                 if created and datetime.now(timezone.utc)-created>_signal_max_age(signal.timeframe):
                     signal.status="paper_skipped"; db.commit(); continue
                 strategy=(signal.strategy or "").lower()
-                account=db.query(PaperAccount).filter(PaperAccount.strategy==strategy,PaperAccount.is_active.is_(True)).first()
-                if account is None:
-                    signal.status="paper_skipped"; db.commit(); continue
+                accounts=db.query(PaperAccount).join(
+                    User, User.telegram_id == PaperAccount.owner_telegram_id
+                ).filter(
+                    PaperAccount.strategy==strategy,
+                    PaperAccount.is_active.is_(True),
+                    PaperAccount.owner_telegram_id != "",
+                    User.is_active.is_(True),
+                ).order_by(PaperAccount.id.asc()).all()
+                if not accounts:
+                    continue
+
                 signal_entry=float(signal.entry_price or 0); stop=float(signal.stop_loss or 0); target=float(signal.take_profit or 0)
                 valid=(stop<signal_entry<target) if signal.direction=="BUY" else (target<signal_entry<stop) if signal.direction=="SELL" else False
                 if not valid:
                     signal.status="paper_skipped"; db.commit(); continue
-                open_positions=db.query(Position).filter(Position.account_id==account.id,Position.status=="open").all()
-                if len(open_positions)>=MAX_OPEN_POSITIONS_PER_ACCOUNT or any(p.symbol==signal.symbol for p in open_positions):
-                    db.commit(); continue
-                equity=_account_equity(db,account)
-                max_dd=float(account.max_drawdown or settings.max_drawdown)
-                if equity<=float(account.initial_balance or 0)*(1-max_dd) or equity<=0:
-                    db.commit(); continue
+
                 quote=await market_data.get_price(signal.symbol); live_entry=float(quote["price"])
                 if live_entry<=0 or abs(live_entry-signal_entry)>abs(signal_entry-stop)*0.5:
                     signal.status="paper_skipped"; db.commit(); continue
                 if signal.direction=="BUY" and not stop<live_entry<target or signal.direction=="SELL" and not target<live_entry<stop:
                     signal.status="paper_skipped"; db.commit(); continue
-                decision=assess_position(equity=equity,entry=live_entry,stop=stop,open_positions=open_positions,
-                                         max_risk_fraction=float(settings.max_risk_per_trade),max_total_risk_fraction=0.04,
-                                         max_exposure_fraction=0.90,max_positions=MAX_OPEN_POSITIONS_PER_ACCOUNT)
-                if not decision.allowed:
-                    logger.info("Paper signal %s blocked by risk engine: %s",signal.id,decision.reason)
-                    db.commit(); continue
-                qty=decision.quantity
-                position=Position(account_id=account.id,signal_id=signal.id,symbol=signal.symbol,direction=signal.direction,
-                    entry_price=live_entry,current_price=live_entry,stop_loss=stop,take_profit=target,quantity=qty,
-                    unrealized_pnl=-2*live_entry*qty*FEE_RATE,status="open")
-                db.add(position); signal.status="paper_opened"; db.commit(); opened+=1
-                logger.info("Paper position opened signal=%s position=%s %s qty=%.8f entry=%.8f reserved_risk=%.2f",signal.id,position.id,signal.symbol,qty,live_entry,decision.reserved_risk)
+
+                opened_for_signal=0
+                for account in accounts:
+                    existing=db.query(Position).filter(
+                        Position.signal_id==signal.id,
+                        Position.account_id==account.id,
+                    ).first()
+                    if existing is not None:
+                        continue
+                    open_positions=db.query(Position).filter(
+                        Position.account_id==account.id,Position.status=="open"
+                    ).all()
+                    if len(open_positions)>=MAX_OPEN_POSITIONS_PER_ACCOUNT or any(p.symbol==signal.symbol for p in open_positions):
+                        continue
+                    equity=_account_equity(db,account)
+                    max_dd=float(account.max_drawdown or settings.max_drawdown)
+                    if equity<=float(account.initial_balance or 0)*(1-max_dd) or equity<=0:
+                        continue
+                    decision=assess_position(
+                        equity=equity,entry=live_entry,stop=stop,open_positions=open_positions,
+                        max_risk_fraction=float(settings.max_risk_per_trade),
+                        max_total_risk_fraction=0.04,max_exposure_fraction=0.90,
+                        max_positions=MAX_OPEN_POSITIONS_PER_ACCOUNT,
+                    )
+                    if not decision.allowed:
+                        logger.info("Paper signal %s blocked for account %s: %s",signal.id,account.id,decision.reason)
+                        continue
+                    qty=decision.quantity
+                    position=Position(account_id=account.id,signal_id=signal.id,symbol=signal.symbol,direction=signal.direction,
+                        entry_price=live_entry,current_price=live_entry,stop_loss=stop,take_profit=target,quantity=qty,
+                        unrealized_pnl=-2*live_entry*qty*FEE_RATE,status="open")
+                    db.add(position)
+                    db.flush()
+                    opened_for_signal += 1
+                    opened += 1
+                    logger.info("Paper position opened signal=%s account=%s owner=%s %s qty=%.8f entry=%.8f reserved_risk=%.2f",
+                        signal.id,account.id,account.owner_telegram_id,signal.symbol,qty,live_entry,decision.reserved_risk)
+                if opened_for_signal:
+                    signal.status="paper_opened"
+                    db.commit()
             except Exception:
                 db.rollback(); logger.exception("Could not process paper signal id=%s",signal_id)
     except Exception:

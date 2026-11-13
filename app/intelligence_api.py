@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import SessionLocal, PaperAccount, Position, Trade
+from app.access import user_id_from_claims
 from app.market_data import market_data
 from app.intelligence import analyze_market, backtest
 from app.strategy_lab import compare_strategies
@@ -38,33 +39,30 @@ def build_router(require_user):
 
     @router.get("/overview")
     async def overview(user=Depends(require_user)):
+        owner_id = user_id_from_claims(user)
         db = SessionLocal()
 
         try:
             accounts = (
                 db.query(PaperAccount)
+                .filter(PaperAccount.owner_telegram_id == owner_id)
                 .order_by(PaperAccount.id.asc())
                 .all()
             )
-
+            account_ids = [account.id for account in accounts]
             trades = (
-                db.query(Trade)
-                .order_by(Trade.id.desc())
-                .limit(500)
-                .all()
-            )
-
+                db.query(Trade).filter(Trade.account_id.in_(account_ids))
+                .order_by(Trade.id.desc()).limit(500).all()
+            ) if account_ids else []
             positions = (
-                db.query(Position)
-                .filter(Position.status == "open")
-                .all()
-            )
+                db.query(Position).filter(
+                    Position.account_id.in_(account_ids), Position.status == "open"
+                ).all()
+            ) if account_ids else []
 
-            pnl = [
-                float(t.net_pnl or 0)
-                for t in trades
-            ]
-
+            pnl = [float(t.net_pnl or 0) for t in trades]
+            wr_trades = [t for t in trades if (t.exit_reason or "").upper() != "MANUAL_CLOSE"]
+            wr_wins = [t for t in wr_trades if float(t.net_pnl or 0) > 0]
             wins = [x for x in pnl if x > 0]
             losses = [x for x in pnl if x < 0]
 
@@ -72,7 +70,7 @@ def build_router(require_user):
                 "mode": "paper_only",
                 "accounts": [
                     {
-                        "name": a.name,
+                        "name": a.strategy.title(),
                         "strategy": a.strategy,
                         "balance": round(
                             float(a.balance or 0), 2
@@ -84,8 +82,12 @@ def build_router(require_user):
                 "open_positions": len(positions),
                 "closed_trades_sample": len(pnl),
                 "win_rate_pct": (
-                    round(100 * len(wins) / len(pnl), 2)
-                    if pnl else None
+                    round(100 * len(wr_wins) / len(wr_trades), 2)
+                    if wr_trades else None
+                ),
+                "win_rate_sample_count": len(wr_trades),
+                "manual_closes_excluded_from_win_rate": sum(
+                    1 for t in trades if (t.exit_reason or "").upper() == "MANUAL_CLOSE"
                 ),
                 "profit_factor": (
                     round(sum(wins) / abs(sum(losses)), 3)

@@ -13,7 +13,7 @@ from aiogram.types import (
 )
 
 from app.config import settings
-from app.database import SessionLocal, PaperAccount, Signal
+from app.database import SessionLocal, PaperAccount, Signal, User
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trading-bot")
@@ -24,10 +24,17 @@ dispatcher.include_router(router)
 
 
 def authorized(message: Message) -> bool:
-    return (
-        message.from_user is not None
-        and str(message.from_user.id) in settings.allowed_user_ids
-    )
+    if message.from_user is None:
+        return False
+    telegram_id = str(message.from_user.id)
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.telegram_id == telegram_id).first()
+        if user is not None:
+            return bool(user.is_active)
+        return telegram_id in settings.allowed_user_ids
+    finally:
+        db.close()
 
 
 def mini_app_keyboard():
@@ -107,9 +114,10 @@ async def summary_command(message: Message):
     db = SessionLocal()
 
     try:
-        accounts = db.query(PaperAccount).order_by(
-            PaperAccount.id.asc()
-        ).all()
+        telegram_id = str(message.from_user.id)
+        accounts = db.query(PaperAccount).filter(
+            PaperAccount.owner_telegram_id == telegram_id
+        ).order_by(PaperAccount.id.asc()).all()
 
         if not accounts:
             await message.answer("Виртуальные счета пока не созданы.")
@@ -138,7 +146,7 @@ async def summary_command(message: Message):
 
         for account in accounts:
             lines.append(
-                f"<b>{escape(account.name)}</b>: "
+                f"<b>{escape((account.strategy or account.name).title())}</b>: "
                 f"${float(account.balance or 0):,.2f}"
             )
 

@@ -14,6 +14,7 @@ from sqlalchemy import func, text
 from app.config import settings
 
 from app.database import SessionLocal, PaperAccount, Position, Signal, Trade, engine
+from app.access import user_id_from_claims, user_account_ids
 from app.market_data import market_data
 
 logger = logging.getLogger("mirage4.api")
@@ -86,11 +87,16 @@ def build_mirage4_router(require_user, app, app_started_at):
         result: str = Query("", pattern="^(|win|loss)$"),
         user=Depends(require_user),
     ):
+        owner_id = user_id_from_claims(user)
         db = SessionLocal()
         try:
-            # The journal is a closed-execution ledger. Open positions remain in
-            # the portfolio endpoint and must not appear as completed trades.
+            # Journal data is always tenant-scoped; shared market signals remain public.
+            account_ids = user_account_ids(db, owner_id)
             query = db.query(Trade).filter(Trade.closed_at.isnot(None))
+            if account_ids:
+                query = query.filter(Trade.account_id.in_(account_ids))
+            else:
+                query = query.filter(Trade.id < 0)
             if symbol:
                 sym = symbol.upper()
                 if not sym.endswith("USDT") or not sym[:-4].isalnum():
@@ -125,9 +131,10 @@ def build_mirage4_router(require_user, app, app_started_at):
             net = float(stats_rows[1] or 0)
             gross = float(stats_rows[2] or 0)
             fees = float(stats_rows[3] or 0)
-            wins_count = query.filter(Trade.net_pnl > 0).count()
-            # Keep Profit Factor in the exact same filtered population as the
-            # rows and the other summary values shown on this journal page.
+            wr_query = query.filter(Trade.exit_reason.is_(None) | (Trade.exit_reason != "MANUAL_CLOSE"))
+            wr_count = wr_query.count()
+            wins_count = wr_query.filter(Trade.net_pnl > 0).count()
+            # Profit Factor and PnL include manual closes; only Win Rate excludes them.
             wins = float(
                 query.filter(Trade.net_pnl > 0)
                 .with_entities(func.sum(Trade.net_pnl)).scalar() or 0
@@ -142,7 +149,9 @@ def build_mirage4_router(require_user, app, app_started_at):
                 "trades": [_trade_dict(t) for t in rows],
                 "summary": {
                     "count": count, "wins": wins_count,
-                    "win_rate_pct": round(wins_count / count * 100, 2) if count else None,
+                    "win_rate_pct": round(wins_count / wr_count * 100, 2) if wr_count else None,
+                    "win_rate_sample_count": wr_count,
+                    "manual_closes_excluded_from_win_rate": count - wr_count,
                     "net_pnl": round(net, 2), "gross_pnl": round(gross, 2),
                     "fees": round(fees, 2), "profit_factor": _safe_pf(wins, losses),
                 },
@@ -195,20 +204,26 @@ def build_mirage4_router(require_user, app, app_started_at):
 
     @router.get("/command-center")
     async def command_center(user=Depends(require_user)):
+        owner_id = user_id_from_claims(user)
         db = SessionLocal()
         try:
-            accounts = db.query(PaperAccount).order_by(PaperAccount.id.asc()).all()
-            positions = db.query(Position).filter(Position.status == "open").all()
+            accounts = db.query(PaperAccount).filter(
+                PaperAccount.owner_telegram_id == owner_id
+            ).order_by(PaperAccount.id.asc()).all()
+            account_ids = [a.id for a in accounts]
+            positions = db.query(Position).filter(
+                Position.account_id.in_(account_ids), Position.status == "open"
+            ).all() if account_ids else []
             closed_trades = (
-                db.query(Trade)
-                .filter(Trade.closed_at.isnot(None))
-                .order_by(Trade.closed_at.asc(), Trade.id.asc())
-                .all()
-            )
+                db.query(Trade).filter(
+                    Trade.account_id.in_(account_ids), Trade.closed_at.isnot(None)
+                ).order_by(Trade.closed_at.asc(), Trade.id.asc()).all()
+            ) if account_ids else []
             closed_count = len(closed_trades)
             wins = sum(float(t.net_pnl or 0) for t in closed_trades if float(t.net_pnl or 0) > 0)
             losses = abs(sum(float(t.net_pnl or 0) for t in closed_trades if float(t.net_pnl or 0) < 0))
-            win_count = sum(1 for t in closed_trades if float(t.net_pnl or 0) > 0)
+            wr_trades = [t for t in closed_trades if (t.exit_reason or "").upper() != "MANUAL_CLOSE"]
+            win_count = sum(1 for t in wr_trades if float(t.net_pnl or 0) > 0)
             net_pnl = sum(float(t.net_pnl or 0) for t in closed_trades)
             total_balance = sum(float(a.balance or 0) for a in accounts)
             initial = sum(float(a.initial_balance or 0) for a in accounts)
@@ -286,7 +301,9 @@ def build_mirage4_router(require_user, app, app_started_at):
                 },
                 "trading": {
                     "closed_trades": closed_count,
-                    "win_rate_pct": round(win_count / closed_count * 100, 2) if closed_count else None,
+                    "win_rate_pct": round(win_count / len(wr_trades) * 100, 2) if wr_trades else None,
+                    "win_rate_sample_count": len(wr_trades),
+                    "manual_closes_excluded_from_win_rate": closed_count - len(wr_trades),
                     "profit_factor": _safe_pf(wins, losses),
                     "signals_total": signal_count,
                     "latest_signal_at": _iso(latest_signal.created_at) if latest_signal else None,

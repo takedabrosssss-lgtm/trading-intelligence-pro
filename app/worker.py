@@ -5,10 +5,10 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 
 from aiogram import Bot
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 from app.config import settings
-from app.database import SessionLocal, Signal, init_db, engine
+from app.database import SessionLocal, Signal, SignalDelivery, User, init_db, engine
 from app.instance_lock import (
     acquire_advisory_lock,
     release_advisory_lock,
@@ -212,59 +212,80 @@ def format_signal_message(signal):
 
 
 async def deliver_pending_signals():
-    if not settings.bot_token or not settings.owner_telegram_id:
+    if not settings.bot_token:
         return 0
 
     db = SessionLocal()
     delivered = 0
-
     try:
-        pending = (
-            db.query(Signal)
-            .filter(Signal.status == "new")
-            .order_by(Signal.id.asc())
-            .limit(100)
-            .all()
-        )
-
+        recipients = db.query(User).filter(User.is_active.is_(True)).order_by(User.created_at.asc()).all()
+        if not recipients:
+            return 0
+        has_delivery = db.query(SignalDelivery.id).filter(
+            SignalDelivery.signal_id == Signal.id
+        ).exists()
+        has_retry = db.query(SignalDelivery.id).filter(
+            SignalDelivery.signal_id == Signal.id,
+            SignalDelivery.status == "pending",
+            SignalDelivery.attempts < 5,
+        ).exists()
+        pending = (db.query(Signal).filter(
+            Signal.status.in_(["new", "sent", "paper_opened"]),
+            Signal.created_at >= datetime.now(timezone.utc) - timedelta(days=3),
+            or_(~has_delivery, has_retry),
+        ).order_by(Signal.id.asc()).limit(100).all())
         if not pending:
             return 0
-
         async with Bot(token=settings.bot_token) as bot:
             for signal in pending:
-                try:
-                    if not is_quality_signal_values(
-                        signal.direction,
-                        signal.score,
-                        signal.grade,
-                    ):
-                        signal.status = "filtered"
-                        db.commit()
+                if not is_quality_signal_values(signal.direction, signal.score, signal.grade):
+                    signal.status = "filtered"
+                    db.commit()
+                    continue
+                any_delivered = False
+                for recipient in recipients:
+                    row = db.query(SignalDelivery).filter(
+                        SignalDelivery.signal_id == signal.id,
+                        SignalDelivery.telegram_id == recipient.telegram_id,
+                    ).first()
+                    if row and row.status == "delivered":
                         continue
-
-                    await bot.send_message(
-                        chat_id=settings.owner_telegram_id,
-                        text=format_signal_message(signal),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True,
-                    )
-
+                    if row is None:
+                        row = SignalDelivery(signal_id=signal.id, telegram_id=recipient.telegram_id, status="pending", attempts=0)
+                        db.add(row)
+                        db.flush()
+                    if row.attempts >= 5:
+                        row.status = "failed"
+                        continue
+                    try:
+                        await bot.send_message(
+                            chat_id=recipient.telegram_id,
+                            text=format_signal_message(signal),
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                        )
+                        row.status = "delivered"
+                        row.delivered_at = datetime.now(timezone.utc)
+                        row.last_error = None
+                        row.attempts += 1
+                        any_delivered = True
+                        delivered += 1
+                    except Exception as exc:
+                        row.attempts += 1
+                        row.status = "pending" if row.attempts < 5 else "failed"
+                        row.last_error = type(exc).__name__[:240]
+                        logger.warning("Signal delivery failed signal=%s recipient=%s error=%s",signal.id,recipient.telegram_id,type(exc).__name__)
+                    db.commit()
+                if any_delivered and signal.status in {"new", "sent"}:
                     signal.status = "sent"
                     db.commit()
-                    delivered += 1
-
-                except Exception:
-                    db.rollback()
-
-                    logger.exception(
-                        "Telegram delivery failed for signal id=%s",
-                        signal.id,
-                    )
-
+    except Exception:
+        db.rollback()
+        logger.exception("Pending signal delivery failed")
     finally:
         db.close()
-
     return delivered
+
 async def scan_market():
     db = SessionLocal()
     saved = 0
