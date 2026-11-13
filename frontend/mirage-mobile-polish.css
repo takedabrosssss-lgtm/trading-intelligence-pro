@@ -1,0 +1,63 @@
+/* MIRAGE mobile/tablet refinement — additive overrides */
+:root { --mirage-safe-gutter: clamp(14px, 3.2vw, 28px); }
+html, body { width:100%; overflow-x:hidden !important; }
+body { position:relative; }
+.app-shell { width:100%; max-width:100%; overflow-x:clip; }
+.app-shell > main { width:100%; box-sizing:border-box; margin-inline:auto !important; }
+.page, .nexus-command, .nexus-command-top, .nexus-command-bottom,
+.nexus-card, .nexus-metric-row, .nexus-radar-layout,
+.nexus-heatmap-grid, .nexus-strategy-grid { min-width:0 !important; }
+.nexus-card *, .page * { min-width:0; }
+.nexus-metric b, .nexus-strategy-value, .nexus-heat-tile b { overflow-wrap:normal !important; word-break:normal !important; }
+.nexus-metric-row { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+.nexus-metric { min-width:0 !important; }
+.nexus-metric small { white-space:normal; line-height:1.25; }
+.nexus-metric b { display:block; white-space:nowrap; font-size:clamp(12px,2.8vw,17px) !important; letter-spacing:-.03em; }
+.nexus-radar-copy, .nexus-radar-copy p, .nexus-card-sub { overflow-wrap:break-word; word-break:normal !important; }
+.nexus-heatmap-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+.nexus-heat-tile { min-width:0; }
+.nexus-heat-tile b { font-size:clamp(14px,3vw,19px); white-space:nowrap; }
+
+/* Ambient dimensional objects: lightweight CSS only, no canvas/WebGL load. */
+.mirage-atmosphere { position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; contain:strict; }
+.mirage-atmosphere::before, .mirage-atmosphere::after { content:""; position:absolute; width:min(54vw,460px); aspect-ratio:1; border-radius:50%; filter:blur(1px); opacity:.16; transform-style:preserve-3d; }
+.mirage-atmosphere::before { top:10%; right:-18%; border:1px solid color-mix(in srgb,var(--nx-accent) 65%,transparent); box-shadow:inset 0 0 50px color-mix(in srgb,var(--nx-accent) 10%,transparent),0 0 70px color-mix(in srgb,var(--nx-accent) 10%,transparent); animation:mirage-float-a 19s ease-in-out infinite; }
+.mirage-atmosphere::after { bottom:5%; left:-24%; width:min(42vw,340px); border:1px solid color-mix(in srgb,var(--nx-violet) 70%,transparent); box-shadow:inset 0 0 44px color-mix(in srgb,var(--nx-violet) 12%,transparent),0 0 65px color-mix(in srgb,var(--nx-violet) 10%,transparent); animation:mirage-float-b 24s ease-in-out infinite; }
+@keyframes mirage-float-a { 0%,100% { transform:translate3d(0,0,0) rotateX(62deg) rotateZ(0deg) scale(.92); } 50% { transform:translate3d(-24px,28px,0) rotateX(62deg) rotateZ(95deg) scale(1.05); } }
+@keyframes mirage-float-b { 0%,100% { transform:translate3d(0,0,0) rotateY(58deg) rotateZ(0deg); } 50% { transform:translate3d(26px,-20px,0) rotateY(58deg) rotateZ(-110deg); } }
+
+@media (max-width: 760px) {
+  .app-shell > main { max-width:100% !important; padding:12px var(--mirage-safe-gutter) 112px !important; }
+  .nexus-command-top { display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:12px !important; }
+  /* Feature cards become a deliberate horizontal swipe rail, not squeezed columns. */
+  .nexus-command-bottom { display:flex !important; flex-wrap:nowrap !important; gap:12px !important; width:calc(100% + var(--mirage-safe-gutter)); margin-right:calc(-1 * var(--mirage-safe-gutter)); padding:2px var(--mirage-safe-gutter) 12px 0; overflow-x:auto !important; overflow-y:hidden !important; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; scrollbar-width:none; }
+  .nexus-command-bottom::-webkit-scrollbar { display:none; }
+  .nexus-command-bottom > .nexus-card { flex:0 0 min(84vw,390px) !important; width:min(84vw,390px) !important; max-width:min(84vw,390px) !important; scroll-snap-align:start; }
+  .nexus-radar-layout { grid-template-columns:88px minmax(0,1fr) !important; gap:12px !important; }
+  .nexus-radar-copy b { font-size:16px; line-height:1.25; }
+  .nexus-radar-copy p { font-size:13px; line-height:1.45; }
+  .nexus-strategy-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  .market-preview { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  .bottom-nav { left:50% !important; right:auto !important; width:calc(100% - 24px) !important; max-width:560px !important; transform:translateX(-50%) !important; box-sizing:border-box !important; }
+  .bottom-nav .nav-item { flex:1 1 0 !important; min-width:0 !important; }
+  .bottom-nav .nav-item small { white-space:nowrap; font-size:11px !important; }
+  .nexus-brand-stamp { display:none !important; }
+}
+@media (min-width:761px) and (max-width:1100px) {
+  .app-shell > main { width:100% !important; max-width:100% !important; padding-inline:clamp(20px,4vw,44px) !important; box-sizing:border-box; }
+  .page { width:100%; margin-inline:auto !important; }
+  .bottom-nav { left:50% !important; right:auto !important; transform:translateX(-50%) !important; max-width:min(760px,calc(100% - 40px)) !important; }
+  .nexus-command-top { grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr) !important; }
+  .nexus-command-bottom { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+}
+@media (max-width:420px) {
+  .nexus-metric-row { gap:5px !important; }
+  .nexus-metric { padding:8px 6px !important; }
+  .nexus-metric small { font-size:9px !important; }
+  .nexus-metric b { font-size:11px !important; }
+  .nexus-strategy-grid { gap:8px !important; }
+  .nexus-strategy-card { padding:11px !important; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .mirage-atmosphere::before,.mirage-atmosphere::after { animation:none !important; }
+}
