@@ -1,0 +1,105 @@
+/* MIRAGE UI RESTORE — deliberately narrow overrides.
+   The original design system remains in charge of cards, typography and buttons. */
+
+/* Use the real MIRAGE avatar already present in frontend/mirage-avatar-512.png. */
+.brand-mark {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.brand-mark > img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  opacity: 1 !important;
+  filter: none !important;
+  border-radius: inherit !important;
+}
+
+/* No second, synthetic logo on top of the actual avatar. */
+.brand-mark > .mirage-brand-sigil,
+.brand-mark > .mr-brand-svg {
+  display: none !important;
+}
+
+/* Telegram profile photo when available; otherwise the bundled MIRAGE avatar. */
+.profile-avatar {
+  display: grid !important;
+  place-items: center !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.profile-avatar > img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: inherit !important;
+}
+
+/* The actual buttons retain their original component styles from
+   mirage-dual-worlds.css, mirage-release.css and mirage-mobile-first.css. */
+.primary-btn,
+.mirage-platform-card button,
+.mirage-close-paper-position,
+.mirage-mode-option,
+.bottom-nav .nav-item,
+.mobile-chip {
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.primary-btn,
+.mirage-platform-card button,
+.mirage-close-paper-position {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-decoration: none !important;
+  white-space: normal;
+}
+
+.mirage-platform-card button {
+  min-width: 0;
+}
+
+.mirage-platform-card button > span,
+.primary-btn > span {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Keep button text legible in both interface modes. */
+body[data-mirage-mode="stealth"] .mirage-platform-primary {
+  color: #236e65 !important;
+  background: linear-gradient(145deg, #f4fbf9, #dfefeb) !important;
+  border: 1px solid #c7e1da !important;
+  box-shadow: 0 7px 18px rgba(25, 94, 80, .13) !important;
+}
+
+body[data-mirage-mode="stealth"] .mirage-platform-danger {
+  color: #a93e4a !important;
+  background: linear-gradient(145deg, #fff8f8, #fce9eb) !important;
+  border: 1px solid #efcdd2 !important;
+}
+
+body[data-mirage-mode="spectre"] .mirage-platform-primary {
+  color: #d7caff !important;
+  background: linear-gradient(145deg, #332953, #211b38) !important;
+  border: 1px solid rgba(184, 154, 255, .34) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .25), 0 0 18px rgba(157, 125, 255, .10) !important;
+}
+
+body[data-mirage-mode="spectre"] .mirage-platform-danger {
+  color: #ffabb5 !important;
+  background: linear-gradient(145deg, #3a202a, #25151e) !important;
+  border: 1px solid rgba(255, 113, 141, .28) !important;
+}
+
+/* Make the product title read exactly as requested. */
+#mirage-phantom-card h2 {
+  letter-spacing: .045em;
+}
