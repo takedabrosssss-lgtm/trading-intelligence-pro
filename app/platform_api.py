@@ -1,3 +1,4 @@
+
 """MIRAGE multi-user profile, preferences, invitations and exchange vault API."""
 from __future__ import annotations
 
@@ -458,8 +459,8 @@ def build_platform_router(require_user):
                     "PROTOCOL PHANTOM is active or the MIRAGE account is inactive",
                 )
             if row.connection_status != "connected" or row.emergency_lock:
-           raise HTTPException(423, "Exchange connection is locked or disconnected")
-            exchange = row.exchange
+                raise HTTPException(423, "Exchange connection is locked or disconnected")
+                exchange = row.exchange
             environment = row.environment
             encrypted_key = row.api_key_encrypted
             encrypted_secret = row.api_secret_encrypted
@@ -674,3 +675,5 @@ def build_platform_router(require_user):
             db.close()
 
     return router
+            
+                                    
