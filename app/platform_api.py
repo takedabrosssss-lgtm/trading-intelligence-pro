@@ -64,7 +64,7 @@ class PhantomUnlockRequest(BaseModel):
 
 
 class ExchangeConnectRequest(BaseModel):
-    exchange: str = Field(pattern=r"^(binance|bybit)$")
+    exchange: str = Field(pattern=r"^(binance|bybit|kraken)$")
     environment: str = Field(default="mainnet", pattern=r"^(mainnet|testnet)$")
     api_key: str = Field(min_length=8, max_length=256)
     api_secret: str = Field(min_length=8, max_length=256)
