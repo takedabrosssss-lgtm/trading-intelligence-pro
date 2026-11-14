@@ -309,6 +309,11 @@ def build_platform_router(require_user):
                 )
         finally:
             check_db.close()
+                    if payload.exchange == "kraken" and payload.environment != "mainnet":
+            raise HTTPException(
+                400,
+                "Kraken Spot supports Mainnet only.",
+                    )
 
         if not payload.confirm_withdrawals_disabled:
             raise HTTPException(
@@ -430,7 +435,11 @@ def build_platform_router(require_user):
                 "exchange": row.exchange,
                 "environment": row.environment,
                 "withdrawal_check": result.get("withdrawal_check"),
-                "message": (
+                                
+                ),
+                                "message": (
+                    "Kraken Spot connection verified. Only Query Funds permission is accepted."
+                    if payload.exchange == "kraken" else
                     "Connection verified. Manually verify that Bybit trading and withdrawal permissions are disabled in the API-key settings."
                     if payload.exchange == "bybit" else
                     "Connection verified. Binance reports withdrawals disabled; manually verify the key has no trading permission."
@@ -458,9 +467,10 @@ def build_platform_router(require_user):
                     423,
                     "PROTOCOL PHANTOM is active or the MIRAGE account is inactive",
                 )
-            if row.connection_status != "connected" or row.emergency_lock:
+                        if row.connection_status != "connected" or row.emergency_lock:
                 raise HTTPException(423, "Exchange connection is locked or disconnected")
-                exchange = row.exchange
+
+            exchange = row.exchange
             environment = row.environment
             encrypted_key = row.api_key_encrypted
             encrypted_secret = row.api_secret_encrypted
