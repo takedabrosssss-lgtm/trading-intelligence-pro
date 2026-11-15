@@ -37,8 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check --whitespace=nowarn INTEGRATION_PATCH.diff
-          git apply --whitespace=nowarn INTEGRATION_PATCH.diff
+          git apply --recount --check --whitespace=nowarn INTEGRATION_PATCH.diff
+          git apply --recount --whitespace=nowarn INTEGRATION_PATCH.diff
           python -m compileall -q app tests
 
       - name: Commit integrated source files
