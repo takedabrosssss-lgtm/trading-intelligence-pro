@@ -45,6 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git fetch origin main
           git add app/worker.py app/platform_api.py app/main.py app/historical_research.py \
             app/intelligence_api.py app/mirage4_api.py frontend/app.js \
             tests/test_release_core.py tests/test_historical_research.py
