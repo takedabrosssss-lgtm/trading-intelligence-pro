@@ -1,8 +1,7 @@
 diff --git a/app/worker.py b/app/worker.py
-index a5e272a..futures01 100644
 --- a/app/worker.py
 +++ b/app/worker.py
-@@ -17,4 +17,4 @@ from app.signals import (
+@@ -19,4 +19,4 @@ from app.signals import (
      is_quality_signal_values,
      signal_strength,
  )
@@ -16,7 +15,7 @@ index a5e272a..futures01 100644
 +                        market="usdt_perpetual_futures",
                          timeframe=signal["timeframe"],
                          direction=signal["direction"],
-@@ -507,1 +507,14 @@
+@@ -506 +506,14 @@
 -async def run_worker():
 +async def monitor_open_positions():
 +    """Protect open Paper positions independently from slow signal scans."""
@@ -32,23 +31,23 @@ index a5e272a..futures01 100644
 +
 +
 +async def run_worker():
-@@ -508,4 +521,5 @@ async def run_worker():
+@@ -507,4 +520,5 @@ async def run_worker():
      while True:
          lock_connection = None
 +        position_monitor_task = None
- 
+
          try:
-@@ -533,2 +547,6 @@ async def run_worker():
- 
+@@ -532,2 +546,6 @@ async def run_worker():
+
              while True:
 +                if position_monitor_task is None or position_monitor_task.done():
 +                    position_monitor_task = asyncio.create_task(
 +                        monitor_open_positions(), name="futures-position-monitor"
 +                    )
-@@ -538,1 +556,1 @@ async def run_worker():
+@@ -537 +555 @@ async def run_worker():
 -                    await run_paper_trading_cycle()
 +                    await open_paper_positions()
-@@ -557,2 +575,6 @@ async def run_worker():
+@@ -556,2 +574,6 @@ async def run_worker():
          finally:
 +            if position_monitor_task is not None:
 +                position_monitor_task.cancel()
@@ -56,13 +55,12 @@ index a5e272a..futures01 100644
 +
              if lock_connection is not None:
 diff --git a/app/platform_api.py b/app/platform_api.py
-index 67dffe6..futures01 100644
 --- a/app/platform_api.py
 +++ b/app/platform_api.py
 @@ -844,8 +844,15 @@ def build_platform_router(require_user):
                      "Open Paper Trading position not found",
                  )
- 
+
 -            quote = await market_data.get_price(row.symbol)
 -            exit_price = float(quote.get("price") or 0)
 +            if getattr(row, "market_type", "spot") == "usdt_perpetual_futures":
@@ -74,10 +72,10 @@ index 67dffe6..futures01 100644
 +                quote_method = getattr(market_data, "get_spot_price", market_data.get_price)
 +                quote = await quote_method(row.symbol)
 +                exit_price = float(quote.get("price") or 0)
- 
+
              if exit_price <= 0:
                  raise HTTPException(
-@@ -867,6 +874,8 @@ def build_platform_router(require_user):
+@@ -868,6 +875,8 @@ def build_platform_router(require_user):
                  "position_id": row.id,
                  "symbol": row.symbol,
 -                "exit_price": round(exit_price, 8),
@@ -88,17 +86,16 @@ index 67dffe6..futures01 100644
                      float(row.realized_pnl or 0),
                      2,
 diff --git a/app/main.py b/app/main.py
-index 9eb9001..futures01 100644
 --- a/app/main.py
 +++ b/app/main.py
-@@ -153,5 +153,5 @@ async def api_status(user: dict = Header(default=None)):
+@@ -154,5 +154,5 @@ async def api_status(user: dict = Header(default=None)):
      return {
          "status": "online", "service": "MIRAGE",
 -        "market_data": "Binance Spot with Kraken Spot fallback",
 +        "market_data": "Binance USD-M Futures; legacy Spot quotes only for pre-existing Spot positions",
          "mode": "paper_trading",
      }
-@@ -223,5 +223,11 @@ async def portfolio(user=__import__("fastapi").Depends(require_user)):
+@@ -255,5 +255,11 @@ async def portfolio(user=__import__("fastapi").Depends(require_user)):
                      "take_profit": float(position.take_profit or 0),
                      "quantity": float(position.quantity or 0),
                      "unrealized_pnl": float(position.unrealized_pnl or 0),
@@ -110,7 +107,7 @@ index 9eb9001..futures01 100644
 +                    "margin_mode": "ISOLATED" if getattr(position, "market_type", "spot") == "usdt_perpetual_futures" else "SPOT",
                      "opened_at": position.opened_at.isoformat() if position.opened_at else None,
                  })
-@@ -270,5 +275,9 @@ async def history(
+@@ -287,6 +293,10 @@ async def history(
          return {"trades": [{
              "symbol": trade.symbol, "direction": trade.direction,
              "strategy": trade.strategy, "net_pnl": trade.net_pnl,
@@ -121,18 +118,16 @@ index 9eb9001..futures01 100644
              "exit_reason": trade.exit_reason,
              "closed_at": trade.closed_at.isoformat() if trade.closed_at else None,
          } for trade in trades]}
-
 diff --git a/app/historical_research.py b/app/historical_research.py
-index 924c6f1..futures01 100644
 --- a/app/historical_research.py
 +++ b/app/historical_research.py
-@@ -1,4 +1,4 @@
+@@ -2,4 +2,4 @@
  """Historical OHLCV loader for MIRAGE research.
- 
+
 -Uses Binance Spot pagination. Does not modify trading or portfolio data.
 +Uses Binance USD-M Futures pagination. Does not modify trading or portfolio data.
  """
-@@ -35,4 +35,4 @@ async def load_historical_candles(
+@@ -39,4 +39,4 @@ async def load_historical_candles(
      interval: str,
      limit: int = 1200,
  ) -> list[dict]:
@@ -141,21 +136,19 @@ index 924c6f1..futures01 100644
 @@ -69,7 +69,7 @@ async def load_historical_candles(
          if end_time is not None:
              params["endTime"] = end_time
- 
+
 -        rows = await market_data._get(
 -            "/api/v3/klines",
 +        rows = await market_data._futures_get(
 +            "/fapi/v1/klines",
              params,
          )
-
 diff --git a/app/intelligence_api.py b/app/intelligence_api.py
-index d109131..futures01 100644
 --- a/app/intelligence_api.py
 +++ b/app/intelligence_api.py
-@@ -250,9 +250,9 @@ def build_router(require_user):
+@@ -337,9 +337,9 @@ def build_router(require_user):
              result = research_strategies(candles)
- 
+
              return {
                  "symbol": symbol,
                  "interval": interval,
@@ -164,7 +157,7 @@ index d109131..futures01 100644
                  "requested_candles": limit,
                  **result,
              }
-@@ -316,6 +316,6 @@ def build_router(require_user):
+@@ -413,6 +413,6 @@ def build_router(require_user):
          return {
              "interval": interval,
              "requested_candles_per_asset": limit,
@@ -172,16 +165,14 @@ index d109131..futures01 100644
 +            "history_source": "Binance USD-M Futures OHLCV",
              **summary,
          }
-
 diff --git a/app/mirage4_api.py b/app/mirage4_api.py
-index 060c42f..futures01 100644
 --- a/app/mirage4_api.py
 +++ b/app/mirage4_api.py
-@@ -20,2 +20,3 @@ VALID_INTERVALS = {"15m", "1h", "4h", "1d"}
+@@ -22,2 +22,3 @@ VALID_INTERVALS = {"15m", "1h", "4h", "1d"}
  VALID_DIRECTIONS = {"BUY", "SELL"}
 +VALID_MARKET_TYPES = {"spot", "usdt_perpetual_futures"}
  VALID_SIGNAL_STATUSES = {"new", "sent", "filtered", "eligible", "paper_opened", "paper_closed", "paper_skipped"}
-@@ -42,4 +43,7 @@ def _trade_dict(t):
+@@ -41,4 +42,7 @@ def _trade_dict(t):
          "gross_pnl": float(t.gross_pnl or 0),
          "fees": float(t.fees or 0),
          "net_pnl": float(t.net_pnl or 0),
@@ -189,13 +180,13 @@ index 060c42f..futures01 100644
 +        "leverage": float(getattr(t, "leverage", 1.0) or 1.0),
 +        "funding_pnl": float(getattr(t, "funding_pnl", 0.0) or 0.0),
          "exit_reason": t.exit_reason,
-@@ -79,4 +83,5 @@ def build_mirage4_router(require_user, app, app_started_at):
+@@ -85,4 +89,5 @@ def build_mirage4_router(require_user, app, app_started_at):
          strategy: str = Query("", max_length=50),
          direction: str = Query("", max_length=4),
          result: str = Query("", pattern="^(|win|loss)$"),
 +        market_type: str = Query("", pattern="^(|spot|usdt_perpetual_futures)$"),
          user=Depends(require_user),
-@@ -104,5 +109,9 @@ def build_mirage4_router(require_user, app, app_started_at):
+@@ -109,5 +114,9 @@ def build_mirage4_router(require_user, app, app_started_at):
                  if direction not in VALID_DIRECTIONS:
                      raise HTTPException(400, "Invalid direction filter")
                  query = query.filter(Trade.direction == direction)
@@ -205,7 +196,7 @@ index 060c42f..futures01 100644
 +                query = query.filter(Trade.market_type == market_type)
              if result not in {"", "win", "loss"}:
                  raise HTTPException(400, "Invalid result filter")
-@@ -224,4 +232,20 @@ def build_mirage4_router(require_user, app, app_started_at):
+@@ -230,4 +239,20 @@ def build_mirage4_router(require_user, app, app_started_at):
              unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
              equity = total_balance + unrealized
 +
@@ -224,9 +215,9 @@ index 060c42f..futures01 100644
 +                    "win_rate_sample_count": len(wr_rows),
 +                    "profit_factor": _safe_pf(market_wins, market_losses),
 +                }
- 
+
              # Closed-trade equity curve + current mark-to-market point. This is
-@@ -302,10 +319,11 @@ def build_mirage4_router(require_user, app, app_started_at):
+@@ -302,10 +327,11 @@ def build_mirage4_router(require_user, app, app_started_at):
                  "trading": {
                      "closed_trades": closed_count,
                      "win_rate_pct": round(win_count / len(wr_trades) * 100, 2) if wr_trades else None,
@@ -238,9 +229,7 @@ index 060c42f..futures01 100644
                  },
 +                "market_breakdown": market_breakdown,
                  "updated_at": datetime.now(timezone.utc).isoformat(),
-
 diff --git a/frontend/app.js b/frontend/app.js
-index 4c6b409..futures01 100644
 --- a/frontend/app.js
 +++ b/frontend/app.js
 @@ -715,4 +715,4 @@
@@ -249,20 +238,20 @@ index 4c6b409..futures01 100644
        return `<button class="dashboard-snapshot-row" type="button" data-page="portfolio">
 -        <span class="dashboard-snapshot-main"><b>${safe(coin(position.symbol))}/USDT</b><small>${safe(position.account || position.strategy || "Paper Trading")} · ${position.direction === "BUY" ? "LONG" : "SHORT"}</small></span>
 +        <span class="dashboard-snapshot-main"><b>${safe(coin(position.symbol))}/USDT</b><small>${safe(position.account || position.strategy || "Paper Trading")} · ${position.direction === "BUY" ? "LONG" : "SHORT"}${position.market_type === "usdt_perpetual_futures" ? " · FUTURES " + Number(position.leverage || 1) + "x" : " · SPOT · legacy"}</small></span>
-@@ -735,4 +735,4 @@
+@@ -733,4 +733,4 @@
        const pnl = Number(trade.net_pnl || 0);
        const cls = pnl >= 0 ? "positive" : "negative";
        return `<button class="dashboard-snapshot-row" type="button" data-page="portfolio" data-profile-scroll="history-list">
 -        <span class="dashboard-snapshot-main"><b>${safe(coin(trade.symbol))}/USDT</b><small>${safe(trade.strategy || "Paper Trading")} · ${safe(trade.exit_reason || "Закрыта")}</small></span>
 +        <span class="dashboard-snapshot-main"><b>${safe(coin(trade.symbol))}/USDT</b><small>${safe(trade.strategy || "Paper Trading")} · ${trade.market_type === "usdt_perpetual_futures" ? "FUTURES " + Number(trade.leverage || 1) + "x" : "SPOT · legacy"} · ${safe(trade.exit_reason || "Закрыта")}</small></span>
-@@ -775,5 +775,6 @@
+@@ -774,5 +774,6 @@
                ${p.direction === "BUY" ? "LONG" : "SHORT"}
              </span>
            </div>
 +          <small>${p.market_type === "usdt_perpetual_futures" ? "USDT-M FUTURES · " + Number(p.leverage || 1) + "x · ISOLATED" : "SPOT · legacy"}</small>
- 
+
            <div class="position-pnl ${up ? "positive" : "negative"}">
-@@ -799,4 +800,17 @@
+@@ -806,4 +807,17 @@
                <span>Количество</span>
                <b>${number(p.quantity, 6)}</b>
              </div>
@@ -280,35 +269,31 @@ index 4c6b409..futures01 100644
 +              <b>${money(p.funding_pnl)}</b>
 +            </div>` : ""}
            </div>
-@@ -939,6 +952,6 @@
+@@ -937,6 +951,6 @@
              <b>${safe(coin(t.symbol))} / USDT</b>
- 
+
              <small>
 -              ${safe(t.strategy || "Paper")}
 +              ${safe(t.strategy || "Paper")} · ${t.market_type === "usdt_perpetual_futures" ? "FUTURES " + Number(t.leverage || 1) + "x" : "SPOT · legacy"}
                · ${safe(date)}
              </small>
-
-
-
 diff --git a/tests/test_release_core.py b/tests/test_release_core.py
-index 4020b47..futures01 100644
 --- a/tests/test_release_core.py
 +++ b/tests/test_release_core.py
-@@ -392,1 +392,1 @@ def test_paper_worker_opens_one_separate_simulated_position_per_user(monkeypatch):
+@@ -393 +393 @@ def test_paper_worker_opens_one_separate_simulated_position_per_user(monkeypatch):
 -            symbol="BTCUSDT", timeframe="15m", direction="BUY", grade="A",
 +            symbol="BTCUSDT", market="usdt_perpetual_futures", timeframe="15m", direction="BUY", grade="A",
-@@ -404,1 +404,5 @@ def test_paper_worker_opens_one_separate_simulated_position_per_user(monkeypatch):
+@@ -405 +405,5 @@ def test_paper_worker_opens_one_separate_simulated_position_per_user(monkeypatch):
 -    monkeypatch.setattr(paper_trading, "market_data", SimpleNamespace(get_price=AsyncMock(return_value={"price": 100.0})))
 +    monkeypatch.setattr(paper_trading, "market_data", SimpleNamespace(
 +        get_mark_price=AsyncMock(return_value={"mark_price": 100.0}),
 +        get_price=AsyncMock(return_value={"price": 100.0}),
 +        get_24h_ticker=AsyncMock(return_value={"quoteVolume": 100_000_000}),
 +    ))
-@@ -541,1 +545,1 @@ def test_paper_worker_does_not_open_new_positions_for_deactivated_users(monkeypatch):
+@@ -542 +546 @@ def test_paper_worker_does_not_open_new_positions_for_deactivated_users(monkeypatch):
 -            symbol="BTCUSDT", timeframe="1h", direction="BUY", grade="A",
 +            symbol="BTCUSDT", market="usdt_perpetual_futures", timeframe="1h", direction="BUY", grade="A",
-@@ -555,4 +559,8 @@ def test_paper_worker_does_not_open_new_positions_for_deactivated_users(monkeypatch):
+@@ -554,4 +558,8 @@ def test_paper_worker_does_not_open_new_positions_for_deactivated_users(monkeypatch):
      monkeypatch.setattr(
          paper_trading, "market_data",
 -        SimpleNamespace(get_price=AsyncMock(return_value={"price": 100.0})),
@@ -318,16 +303,16 @@ index 4020b47..futures01 100644
 +            get_24h_ticker=AsyncMock(return_value={"quoteVolume": 100_000_000}),
 +        ),
      )
-@@ -563,5 +571,1 @@ def test_paper_worker_does_not_open_new_positions_for_deactivated_users(monkeypatch):
+@@ -562,5 +570 @@ def test_paper_worker_does_not_open_new_positions_for_deactivated_users(monkeypatch):
 -    monkeypatch.setattr(
 -        paper_trading, "assess_position",
 -        lambda **kwargs: SimpleNamespace(allowed=True, quantity=1.0, reserved_risk=5.0),
 -    )
      opened = asyncio.run(paper_trading.open_paper_positions())
-@@ -965,1 +969,1 @@ def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
+@@ -966 +970 @@ def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
 -            symbol="BTCUSDT", timeframe="15m", direction="BUY", grade="A",
 +            symbol="BTCUSDT", market="usdt_perpetual_futures", timeframe="15m", direction="BUY", grade="A",
-@@ -981,7 +985,12 @@ def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
+@@ -978,7 +982,12 @@ def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
 -    monkeypatch.setattr(paper_trading, "market_data", SimpleNamespace(get_price=AsyncMock(return_value={"price": 100.0})))
 -    monkeypatch.setattr(paper_trading, "assess_position", lambda **kwargs: SimpleNamespace(
 -        allowed=kwargs["equity"] > 2450,
@@ -347,12 +332,9 @@ index 4020b47..futures01 100644
 +        liquidation_price=50.0,
 +        reason="approved" if kwargs["equity"] > 2450 else "temporary risk block",
 +    ))
-@@ -996,6 +1008,5 @@ def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
+@@ -996,3 +1005,5 @@ def test_paper_worker_retries_signal_for_users_who_missed_first_open(monkeypatch):
 -    monkeypatch.setattr(paper_trading, "assess_position", lambda **kwargs: SimpleNamespace(
--        allowed=True,
--        quantity=0.1,
--        reserved_risk=0.5,
--        reason=None,
+-        allowed=True, quantity=0.1, reserved_risk=0.5, reason=None,
 -    ))
 +    monkeypatch.setattr(paper_trading, "size_isolated_position", lambda **kwargs: PositionSizing(
 +        allowed=True, quantity=0.1, leverage=2, margin_used=5.0,
@@ -360,15 +342,14 @@ index 4020b47..futures01 100644
 +        reason="approved",
 +    ))
 diff --git a/tests/test_historical_research.py b/tests/test_historical_research.py
-index cc8c8e0..futures01 100644
 --- a/tests/test_historical_research.py
 +++ b/tests/test_historical_research.py
-@@ -78,1 +78,1 @@ class HistoricalResearchTests(unittest.IsolatedAsyncioTestCase):
+@@ -79 +79 @@ class HistoricalResearchTests(unittest.IsolatedAsyncioTestCase):
 -            "app.historical_research.market_data._get",
 +            "app.historical_research.market_data._futures_get",
-@@ -103,1 +103,1 @@ class HistoricalResearchTests(unittest.IsolatedAsyncioTestCase):
+@@ -104 +104 @@ class HistoricalResearchTests(unittest.IsolatedAsyncioTestCase):
 -            "app.historical_research.market_data._get",
 +            "app.historical_research.market_data._futures_get",
-@@ -126,1 +126,1 @@ class HistoricalResearchTests(unittest.IsolatedAsyncioTestCase):
+@@ -127 +127 @@ class HistoricalResearchTests(unittest.IsolatedAsyncioTestCase):
 -            "app.historical_research.market_data._get",
 +            "app.historical_research.market_data._futures_get",
