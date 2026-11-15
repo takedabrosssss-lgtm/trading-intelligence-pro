@@ -1,0 +1,59 @@
+
+name: Prepare MIRAGE Futures integration
+
+on:
+  push:
+    branches:
+      - mirage-futures-upload-1
+
+permissions:
+  contents: write
+
+jobs:
+  apply-integration:
+    if: github.ref == 'refs/heads/mirage-futures-upload-1'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out upload branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify audited base is an ancestor
+        shell: bash
+        env:
+          EXPECTED_BASE: 088450d95fa161997006dd3f4c6c2ab309a0dc76
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$EXPECTED_BASE" HEAD^; then
+            echo "ERROR: Upload branch is not descended from audited base."
+            exit 1
+          fi
+          test -f INTEGRATION_PATCH.diff
+          test -f BASE_SOURCE_MANIFEST.txt
+
+      - name: Validate and apply integration patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check --whitespace=nowarn INTEGRATION_PATCH.diff
+          git apply --whitespace=nowarn INTEGRATION_PATCH.diff
+          python -m compileall -q app tests
+
+      - name: Commit integrated source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add app/worker.py app/platform_api.py app/main.py app/historical_research.py \
+            app/intelligence_api.py app/mirage4_api.py frontend/app.js \
+            tests/test_release_core.py tests/test_historical_research.py
+          if git diff --cached --quiet; then
+            echo "No integration changes to commit."
+            exit 1
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Apply MIRAGE Futures Paper Trading integration"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          
