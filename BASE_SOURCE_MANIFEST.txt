@@ -1,0 +1,29 @@
+MIRAGE Futures update — source snapshot manifest
+Repository: takedabrosssss-lgtm/trading-intelligence-pro
+Branch: main
+Base commit: 088450d95fa161997006dd3d4f6c2ab309a0dc76
+Snapshot verified: 2026-11-15
+
+Files replaced by complete files in this bundle:
+app/config.py                         f2517d6c9c78ab3b089f393b4c3f375102b5b798
+app/database.py                       b49a79a151836a99a7973d25d929045a885d6fb0
+app/market_data.py                    c828287ddc2e3b8629a50673a492a54fdd4d7311
+app/migrations.py                     c2cb07ba9d91a3865149be8d77d3b251074b2091
+app/paper_trading.py                  b6f38297e22ab55f83db6eb5f3e0dbcff5aba8f4
+app/risk_engine.py                    50321dfd7dcdb549c1ac70918e132164a498c10a
+
+Existing files edited by INTEGRATION_PATCH.diff:
+app/worker.py                         a5e272a0f4df20e2ab885820c5f796cefe4a9926
+app/platform_api.py                   67dffe629db265dd1552cc04c59937bdef20e0f6
+app/main.py                           9eb9001c9e0902077984a6509747fab10240d6ca
+app/historical_research.py            924c6f116f00c5f7614a88798d1636ad4efa873a
+app/intelligence_api.py               d1091316eeef7bca079a4e7e247db49489b5863e
+app/mirage4_api.py                    060c42f2c824c273b78a65cdbec57c2596ff5a09
+frontend/app.js                       4c6b4098199a340d8baf8aa8ef4451f9b62dcca0
+tests/test_release_core.py            4020b47164e8144129f8a550b4fd5e8759f2334f
+tests/test_historical_research.py     cc8c8e0f71067344ebf5f3d3db645fb5f2ef0a32
+
+Important:
+- The diff is based on the exact commit above. Verify the base before applying.
+- No GitHub branch/commit or Render deployment was created by this task.
+- app/__init__.py is intentionally not included as a replacement; keep the repository's original file.
